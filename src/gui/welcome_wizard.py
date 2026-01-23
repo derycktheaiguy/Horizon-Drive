@@ -88,5 +88,5 @@ class WelcomeWizard(ctk.CTkToplevel):
             self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
 
     def _on_complete(self):
-        self.on_success()
         self.destroy()
+        self.on_success()
