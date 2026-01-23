@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specific
+client_secrets.json
+data/
+*.png
+!GUI_image.png
+*.pdf
+
+# AI/Agent artifacts
+.gemini/
+brain/
+task.md
+implementation_plan.md
+walkthrough.md
+
+# Package
+dist/
+build/
+*.egg-info/
