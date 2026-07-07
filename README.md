@@ -1,8 +1,9 @@
 # 🌌 Horizon Drive (Linux Edition)
 
+[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/HorizonHubMedia/Horizon-Drive/actions/workflows/ci.yml/badge.svg)](https://github.com/HorizonHubMedia/Horizon-Drive/actions/workflows/ci.yml)
 [![OS: Linux](https://img.shields.io/badge/OS-Linux-orange.svg)](https://www.linux.org/)
-[![Python: 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 
 **Horizon Drive** is a premium, native Google Drive desktop client for Linux (optimized for LMDE 7). Designed for power users transitioning from Windows, it brings the "Fluent Design" aesthetic and bulletproof syncing to the Linux desktop.
 
@@ -10,11 +11,14 @@
 
 ## ✨ Features
 
-- **Windows 11 Parity**: Indistinguishable from the official Windows client, featuring glassmorphism, rounded corners, and smooth micro-animations.
+- **System Tray with live status icons** (grey = paused/offline, blue = syncing, green = up to date)
+- **Real-time transfer queue** with progress bars for uploads and downloads
+- **Live Google Drive storage quota** display in the sidebar
+- **Smart views**: Recent files, Starred, Trash, and Shared with me — all live from Google Drive
 - **BYOK (Bring Your Own Key)**: Enhanced privacy and speed by using your own Google Cloud API credentials. No shared client bottlenecks.
-- **Two-Way Sync**: Reliable background engine powered by `watchdog` for real-time file monitoring.
+- **Two-Way Sync Engine**: Reliable background sync powered by `watchdog` for real-time file monitoring.
+- **Dark-themed Fluent Design UI**: Polished interface with glassmorphism, rounded corners, and smooth micro-animations.
 - **Secure by Design**: Credentials and tokens are stored exclusively in the Linux `keyring`. No plain-text secrets.
-- **System Tray Integration**: Native integration for quick status checks and manual sync control.
 
 ## 🚀 Getting Started
 
@@ -37,10 +41,34 @@
    pip install -r requirements.txt
    ```
 
-3. **Launch the application**:
+3. **Or install as a package**:
+   ```bash
+   # Install directly
+   pip install .
+
+   # Or install in editable/dev mode
+   pip install -e .
+   ```
+
+4. **Launch the application**:
    ```bash
    python3 src/main.py
+
+   # Or if installed via pip:
+   horizon-drive
    ```
+
+> **Coming soon:** `pip install horizon-drive` will be available on PyPI.
+
+## 📸 Screenshots
+
+<!-- Add screenshots to assets/ directory -->
+
+## 🎨 Icon Assets
+
+Icons are generated programmatically by pystray at runtime (grey, blue, and green status indicators). For custom icons, place PNG files in `assets/`:
+
+- `assets/google_drive_icon.png` — the main window icon
 
 ## 🛠 Setup (BYOK Flow)
 
@@ -65,6 +93,3 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 Built with ❤️ by **Horizon Hub Media**. Let's make Linux beautiful.
-
-
-

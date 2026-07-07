@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 import keyring
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+
+logger = logging.getLogger(__name__)
 
 class AuthManager:
     SERVICE_NAME = "HorizonDrive"
@@ -72,3 +75,23 @@ class AuthManager:
     def is_authenticated(self):
         """Checks if the user is currently authenticated."""
         return self.credentials is not None and self.credentials.valid
+
+    def get_quota(self):
+        """Fetches Google Drive storage quota.
+
+        Returns:
+            dict with keys 'limit', 'usage', 'usageInDrive' (all str bytes),
+            or None on failure.
+        """
+        try:
+            service = self.get_service()
+            about = service.about().get(fields='storageQuota').execute()
+            quota = about.get('storageQuota', {})
+            return {
+                'limit': quota.get('limit', '0'),
+                'usage': quota.get('usage', '0'),
+                'usageInDrive': quota.get('usageInDrive', '0'),
+            }
+        except Exception as e:
+            logger.error("AuthManager: Failed to fetch storage quota: %s", e)
+            return None

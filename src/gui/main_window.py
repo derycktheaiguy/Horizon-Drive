@@ -4,7 +4,10 @@ import os
 import sys
 import webbrowser
 import threading
+import logging
 from engine.sync_engine import SyncEngine
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(ctk.CTk):
@@ -34,9 +37,18 @@ class MainWindow(ctk.CTk):
         self.view_mode = "List"  # Grid vs List
         self.show_transfer_queue = False
         
+        # System tray attributes
+        self.tray_icon = None
+        self.tray_icons = None
+        self.sync_paused = False
+        self._force_quit = False
+        
         # Initialize and Start Sync Engine
         self.engine = SyncEngine(self.auth_manager, self.sync_dir, status_callback=self.update_sync_status)
         self.engine.start()
+        
+        # Start live quota refresh
+        self._refresh_quota()
 
         self._build_sidebar()
         self._build_main_content()
@@ -103,10 +115,10 @@ class MainWindow(ctk.CTk):
                 )
             else:
                 self.sidebar_icon_img = None
-                print("UI Warning: No icon found in assets/")
+                logger.info("No icon found in assets/")
         except Exception as e:
             self.sidebar_icon_img = None
-            print(f"UI Warning: Could not load icon: {e}")
+            logger.info(f"Could not load icon: {e}")
 
 
     def _build_sidebar(self):
@@ -237,7 +249,16 @@ class MainWindow(ctk.CTk):
         try:
             after_id = self.after(0, lambda: self._update_ui_labels(title, subtitle))
             self._after_ids.append(after_id)
-        except:
+            
+            # Update tray icon based on status
+            status = 'uptodate'
+            title_lower = title.lower()
+            if 'sync' in title_lower:
+                status = 'syncing'
+            elif 'paus' in title_lower or 'offline' in title_lower or 'error' in title_lower:
+                status = 'paused'
+            self.update_tray_status(status)
+        except Exception:
             pass
 
     def _update_ui_labels(self, title, subtitle):
@@ -266,13 +287,16 @@ class MainWindow(ctk.CTk):
             # Threaded fetch
             threading.Thread(target=self._fetch_and_render_my_drive).start()
         elif view_name == "Shared":
-            self._render_placeholder_view("Shared with me", "Files shared with you will appear here.")
+            self._render_loading_state()
+            threading.Thread(target=self._fetch_and_render_shared, daemon=True).start()
         elif view_name == "Computers":
-            self._render_placeholder_view("Computers", "Backup folders from your computers.")
+            self._render_placeholder_view("Computers", "Backup folders from your computers (requires Backup & Sync API)")
         elif view_name == "Starred":
-            self._render_placeholder_view("Starred", "Your starred files and folders.")
+            self._render_loading_state()
+            threading.Thread(target=self._fetch_and_render_starred, daemon=True).start()
         elif view_name == "Trash":
-            self._render_placeholder_view("Trash", "Items in trash will be deleted after 30 days.")
+            self._render_loading_state()
+            threading.Thread(target=self._fetch_and_render_trashed, daemon=True).start()
         elif view_name == "Storage":
             self._render_storage_view()
     
@@ -389,6 +413,7 @@ class MainWindow(ctk.CTk):
             self.transfer_panel.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="ew")
             self.transfer_btn.configure(fg_color="#1E1E1E")
             self._render_transfer_queue()
+            self._refresh_transfers()
         else:
             self.transfer_panel.grid_forget()
             self.transfer_btn.configure(fg_color="#2D2D2D")
@@ -399,16 +424,28 @@ class MainWindow(ctk.CTk):
         
         ctk.CTkLabel(self.transfer_panel, text="Active Transfers", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=10, padx=20, anchor="w")
         
-        # Dummy data for now
-        dummy_transfers = [
-            ("↑  Uploading", "Quarterly_Results.pdf", 0.75),
-            ("↓  Downloading", "Vacation_Videos.zip", 0.30)
-        ]
+        # Real transfer data from sync engine
+        transfers = []
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                transfers = self.engine.active_transfers
+            except Exception:
+                pass
         
-        for status, name, progress in dummy_transfers:
+        if not transfers:
+            ctk.CTkLabel(self.transfer_panel, text="No active transfers", font=ctk.CTkFont(size=12), text_color="#666666").pack(pady=10)
+            return
+        
+        for t in transfers:
             row = ctk.CTkFrame(self.transfer_panel, fg_color="transparent")
             row.pack(fill="x", padx=20, pady=2)
-            ctk.CTkLabel(row, text=f"{status}: {name}", font=ctk.CTkFont(size=12)).pack(side="left")
+            
+            arrow = "↑" if t.get('type') == 'upload' else "↓"
+            action = "Uploading" if t.get('type') == 'upload' else "Downloading"
+            name = t.get('filename', 'Unknown')
+            progress = t.get('progress', 0.0)
+            
+            ctk.CTkLabel(row, text=f"{arrow}  {action}: {name}", font=ctk.CTkFont(size=12)).pack(side="left")
             bar = ctk.CTkProgressBar(row, width=200, height=4, progress_color="#34A853")
             bar.set(progress)
             bar.pack(side="right", padx=10)
@@ -435,12 +472,12 @@ class MainWindow(ctk.CTk):
         return f"{s} {size_name[i]}"
     
     def _render_home_view(self):
-        """Placeholder for Home view."""
-        header = ctk.CTkLabel(self.content_frame, text="Home / Recent Activity", font=ctk.CTkFont(size=20, weight="bold"))
+        """Home view with recent files from Google Drive."""
+        header = ctk.CTkLabel(self.content_frame, text="Recent Files", font=ctk.CTkFont(size=20, weight="bold"))
         header.pack(padx=10, pady=(10, 20), anchor="w")
         
-        placeholder = ctk.CTkLabel(self.content_frame, text="Recent activity will appear here soon.", font=ctk.CTkFont(size=14), text_color="#666666")
-        placeholder.pack(pady=50)
+        self._render_loading_state()
+        threading.Thread(target=self._fetch_and_render_home, daemon=True).start()
 
     def _render_placeholder_view(self, title, message):
         """Generic placeholder for unimplemented views."""
@@ -451,52 +488,296 @@ class MainWindow(ctk.CTk):
         placeholder.pack(pady=50)
     
     def _render_storage_view(self):
-        """Storage breakdown view."""
+        """Storage breakdown view with live quota."""
         header = ctk.CTkLabel(self.content_frame, text="Storage", font=ctk.CTkFont(size=20, weight="bold"))
         header.pack(padx=10, pady=(10, 20), anchor="w")
         
-        # Large progress indicator
-        progress_frame = ctk.CTkFrame(self.content_frame, fg_color="#2A2A2A", corner_radius=15, height=120)
-        progress_frame.pack(fill="x", padx=10, pady=10)
-        progress_frame.pack_propagate(False)
+        # Fetch quota in background
+        def fetch_and_render():
+            try:
+                quota = self.auth_manager.get_quota()
+                if self._is_closing:
+                    return
+                self.after(0, lambda: self._render_storage_data(quota))
+            except Exception as e:
+                logger.error(f"Error fetching storage: {e}")
+                if not self._is_closing:
+                    self.after(0, lambda: self._render_storage_data(None))
         
-        ctk.CTkLabel(progress_frame, text="45 GB of 100 GB used (45%)", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 10))
+        threading.Thread(target=fetch_and_render, daemon=True).start()
+    
+    def _render_storage_data(self, quota):
+        """Render storage bars with real or fallback data."""
+        if self._is_closing:
+            return
         
-        large_bar = ctk.CTkProgressBar(progress_frame, width=400, height=12, progress_color="#34A853", fg_color="#404040")
-        large_bar.set(0.45)
-        large_bar.pack(pady=(0, 20))
+        if not quota:
+            ctk.CTkLabel(self.content_frame, text="Quota unavailable", font=ctk.CTkFont(size=14), text_color="#666666").pack(pady=50)
+            return
         
-        # Breakdown
-        breakdown = [
-            ("📄 Google Drive", "30 GB", 0.67),
-            ("📧 Gmail", "10 GB", 0.22),
-            ("📸 Google Photos", "5 GB", 0.11),
-        ]
+        try:
+            limit = int(quota.get('limit', 0))
+            usage = int(quota.get('usage', 0))
+            usage_in_drive = int(quota.get('usageInDrive', usage))
+            
+            pct = (usage / limit) if limit > 0 else 0
+            usage_str = self._format_bytes_human(usage)
+            limit_str = self._format_bytes_human(limit)
+            drive_str = self._format_bytes_human(usage_in_drive)
+            
+            # Large progress indicator
+            progress_frame = ctk.CTkFrame(self.content_frame, fg_color="#2A2A2A", corner_radius=15, height=120)
+            progress_frame.pack(fill="x", padx=10, pady=10)
+            progress_frame.pack_propagate(False)
+            
+            pct_display = int(pct * 100)
+            ctk.CTkLabel(progress_frame, text=f"{usage_str} of {limit_str} used ({pct_display}%)",
+                        font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 10))
+            
+            large_bar = ctk.CTkProgressBar(progress_frame, width=400, height=12, progress_color="#34A853", fg_color="#404040")
+            large_bar.set(min(pct, 1.0))
+            large_bar.pack(pady=(0, 20))
+            
+            # Breakdown
+            other_usage = usage - usage_in_drive
+            drive_pct = (usage_in_drive / usage) if usage > 0 else 1.0
+            other_pct = 1.0 - drive_pct
+            
+            breakdown = [
+                ("📄 Google Drive", drive_str, drive_pct),
+            ]
+            if other_usage > 0:
+                breakdown.append(("📧 Gmail & Photos", self._format_bytes_human(other_usage), other_pct))
+            
+            for label, size, frac in breakdown:
+                item = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+                item.pack(fill="x", padx=10, pady=5)
+                ctk.CTkLabel(item, text=label, font=ctk.CTkFont(size=13)).pack(side="left")
+                ctk.CTkLabel(item, text=size, font=ctk.CTkFont(size=13), text_color="#888888").pack(side="right")
+                
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing storage quota: {e}")
+            ctk.CTkLabel(self.content_frame, text="Error loading storage data", font=ctk.CTkFont(size=14), text_color="#666666").pack(pady=50)
+    
+    # ─── Quota & Utility ───────────────────────────────────────────────
+    
+    def _refresh_quota(self):
+        """Fetch live storage quota from Google Drive API."""
+        def fetch():
+            try:
+                quota = self.auth_manager.get_quota()
+                if self._is_closing:
+                    return
+                self.after(0, lambda: self._update_quota_ui(quota))
+            except Exception as e:
+                logger.error(f"Failed to fetch quota: {e}")
         
-        for label, size, pct in breakdown:
-            item = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-            item.pack(fill="x", padx=10, pady=5)
-            ctk.CTkLabel(item, text=label, font=ctk.CTkFont(size=13)).pack(side="left")
-            ctk.CTkLabel(item, text=size, font=ctk.CTkFont(size=13), text_color="#888888").pack(side="right")
+        threading.Thread(target=fetch, daemon=True).start()
+        # Schedule next refresh in 5 minutes
+        self.after(300000, self._refresh_quota)
+    
+    def _update_quota_ui(self, quota):
+        """Update sidebar quota bar with real data."""
+        if self._is_closing:
+            return
+        if not quota:
+            try:
+                self.sidebar_quota_label.configure(text="Quota unavailable")
+            except Exception:
+                pass
+            return
+        
+        try:
+            limit = int(quota.get('limit', 0))
+            usage = int(quota.get('usage', 0))
+            
+            if limit > 0:
+                pct = usage / limit
+                usage_str = self._format_bytes_human(usage)
+                limit_str = self._format_bytes_human(limit)
+                
+                try:
+                    self.sidebar_quota_label.configure(text=f"Storage ({usage_str} / {limit_str})")
+                    self.sidebar_quota_bar.set(min(pct, 1.0))
+                except Exception:
+                    pass
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing quota for sidebar: {e}")
+    
+    @staticmethod
+    def _format_bytes_human(size_bytes):
+        """Convert bytes to human-readable string."""
+        if size_bytes == 0:
+            return "0 B"
+        size_name = ("B", "KB", "MB", "GB", "TB")
+        i = 0
+        size = float(size_bytes)
+        while size >= 1024 and i < len(size_name) - 1:
+            size /= 1024
+            i += 1
+        return f"{size:.1f} {size_name[i]}"
+    
+    # ─── System Tray Integration ───────────────────────────────────────
+    
+    def restore_window(self):
+        """Restore window from system tray."""
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+    
+    def force_quit(self):
+        """Full shutdown from tray menu."""
+        self._force_quit = True
+        try:
+            self.deiconify()
+        except Exception:
+            pass
+        self.on_closing()
+    
+    def toggle_sync(self):
+        """Pause or resume sync engine."""
+        self.sync_paused = not self.sync_paused
+        if self.sync_paused:
+            if hasattr(self, 'engine') and self.engine:
+                try:
+                    self.engine.stop()
+                except Exception:
+                    pass
+            self._update_ui_labels("Paused", "Sync is paused")
+            self.update_tray_status('paused')
+        else:
+            if hasattr(self, 'engine') and self.engine:
+                try:
+                    self.engine.start()
+                except Exception:
+                    pass
+            self._update_ui_labels("Restarting...", "Resuming sync")
+            self.update_tray_status('syncing')
+    
+    def update_tray_status(self, status):
+        """Update system tray icon. Accepts: 'syncing', 'uptodate', 'paused'."""
+        if not hasattr(self, 'tray_icons') or not self.tray_icons:
+            return
+        if not hasattr(self, 'tray_icon') or not self.tray_icon:
+            return
+        icon_img = self.tray_icons.get(status, self.tray_icons.get('uptodate'))
+        if icon_img:
+            try:
+                self.tray_icon.icon = icon_img
+            except Exception:
+                pass
+    
+    # ─── Transfer Queue Refresh ────────────────────────────────────────
+    
+    def _refresh_transfers(self):
+        """Poll for transfer updates while panel is open."""
+        if self._is_closing or not self.show_transfer_queue:
+            return
+        try:
+            self._render_transfer_queue()
+        except Exception:
+            pass
+        self.after(500, self._refresh_transfers)
+    
+    # ─── Fetchers for Placeholder Views ────────────────────────────────
+    
+    def _fetch_and_render_home(self):
+        """Background thread: fetch recent files for Home view."""
+        files = []
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                files = self.engine.list_recent_files(10)
+            except Exception as e:
+                logger.error(f"Error fetching recent files: {e}")
+        if not self._is_closing:
+            self.after(0, lambda: self._render_fetched_view("Recent Files", files))
+    
+    def _fetch_and_render_shared(self):
+        """Background thread: fetch shared-with-me files."""
+        files = []
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                files = self.engine.list_shared_with_me()
+            except Exception as e:
+                logger.error(f"Error fetching shared files: {e}")
+        if not self._is_closing:
+            self.after(0, lambda: self._render_fetched_view("Shared with me", files))
+    
+    def _fetch_and_render_starred(self):
+        """Background thread: fetch starred files."""
+        files = []
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                files = self.engine.list_starred()
+            except Exception as e:
+                logger.error(f"Error fetching starred files: {e}")
+        if not self._is_closing:
+            self.after(0, lambda: self._render_fetched_view("Starred", files))
+    
+    def _fetch_and_render_trashed(self):
+        """Background thread: fetch trashed files."""
+        files = []
+        if hasattr(self, 'engine') and self.engine:
+            try:
+                files = self.engine.list_trashed()
+            except Exception as e:
+                logger.error(f"Error fetching trashed files: {e}")
+        if not self._is_closing:
+            self.after(0, lambda: self._render_fetched_view("Trash", files))
+    
+    def _render_fetched_view(self, title, files):
+        """Render fetched files in the current content area."""
+        if self._is_closing:
+            return
+        # Clear content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        
+        header = ctk.CTkLabel(self.content_frame, text=title, font=ctk.CTkFont(size=20, weight="bold"))
+        header.pack(padx=10, pady=(10, 20), anchor="w")
+        
+        if not files:
+            ctk.CTkLabel(self.content_frame, text="No files found.", font=ctk.CTkFont(size=14), text_color="#666666").pack(pady=50)
+            return
+        
+        if self.view_mode == "Grid":
+            self._render_grid_view(files)
+        else:
+            self._render_list_view(files)
 
     def on_closing(self):
-        """Safe shutdown."""
+        """Safe shutdown — minimize to tray if tray is available."""
         if self._is_closing:
+            return
+        
+        if hasattr(self, 'tray_icon') and self.tray_icon and not self._force_quit:
+            logger.info("Minimizing to system tray")
+            self.withdraw()
             return
             
         self._is_closing = True
-        print("Shutting down...")
+        logger.info("Shutting down...")
         
         if hasattr(self, 'engine'):
             try:
                 self.engine.stop()
-            except:
+            except Exception:
+                pass
+        
+        # Stop tray icon if running
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            try:
+                self.tray_icon.stop()
+            except Exception:
                 pass
             
         for aid in self._after_ids:
             try:
                 self.after_cancel(aid)
-            except:
+            except Exception:
                 pass
         
         self.destroy()

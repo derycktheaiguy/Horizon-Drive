@@ -1,7 +1,11 @@
 import customtkinter as ctk
 import os
 import json
+import logging
 from tkinter import filedialog
+
+logger = logging.getLogger(__name__)
+
 
 class SetupWizard(ctk.CTkToplevel):
     def __init__(self, on_complete):
@@ -83,7 +87,7 @@ class SetupWizard(ctk.CTkToplevel):
             self.destroy()
             self.on_complete(self.config)
         except Exception as e:
-            print(f"Error saving config: {e}")
+            logger.error(f"Error saving config: {e}")
 
 if __name__ == "__main__":
     def dummy_complete(config):

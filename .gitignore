@@ -39,6 +39,7 @@ walkthrough.md
 dist/
 build/
 *.egg-info/
+.ruff_cache/
 
 
 

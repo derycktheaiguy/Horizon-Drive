@@ -1,5 +1,9 @@
 import customtkinter as ctk
 import webbrowser
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class WelcomeWizard(ctk.CTkToplevel):
     def __init__(self, auth_manager, on_success):

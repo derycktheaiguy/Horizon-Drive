@@ -6,6 +6,7 @@ LMDE 7 / X11 Compatible Version
 
 import os
 import sys
+import logging
 
 # CRITICAL: Set environment variables BEFORE any Tkinter/CTk imports
 # This prevents X11 BadLength errors on Linux Mint / LMDE
@@ -21,8 +22,11 @@ ctk.set_widget_scaling(1.0)
 ctk.set_window_scaling(1.0)
 
 import json
+import pystray
+from PIL import Image, ImageDraw
 from auth import AuthManager
 from gui import MainWindow, WelcomeWizard, SetupWizard
+
 
 def load_config():
     config_path = os.path.join(os.getcwd(), "config.json")
@@ -31,11 +35,47 @@ def load_config():
             with open(config_path, "r") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Error loading config: {e}")
+            logging.warning(f"Error loading config: {e}")
     return None
 
 
+def _create_tray_icons():
+    """Generate 64x64 RGBA tray icons programmatically.
+
+    Returns:
+        dict with keys 'paused' (grey square), 'syncing' (blue square),
+        'uptodate' (green circle with white checkmark).
+    """
+    size = 64
+
+    # Grey rounded square — paused/offline
+    grey = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(grey)
+    draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(128, 128, 128, 255))
+
+    # Blue rounded square — syncing
+    blue = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(blue)
+    draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(66, 133, 244, 255))
+
+    # Green circle with white checkmark — up to date
+    green = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(green)
+    draw.ellipse([8, 8, 56, 56], fill=(52, 168, 83, 255))
+    draw.line([(22, 33), (29, 42), (42, 24)], fill=(255, 255, 255, 255), width=5)
+
+    return {
+        'paused': grey,
+        'syncing': blue,
+        'uptodate': green,
+    }
+
+
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(name)s] %(levelname)s: %(message)s'
+    )
     auth_manager = AuthManager()
     config = load_config()
 
@@ -59,6 +99,7 @@ def main():
     else:
         show_main_app(auth_manager, config)
 
+
 def show_setup_wizard(auth_manager, parent_root=None):
     if not parent_root:
         parent_root = ctk.CTk()
@@ -75,6 +116,33 @@ def show_setup_wizard(auth_manager, parent_root=None):
 def show_main_app(auth_manager, config):
     sync_dir = config.get("local_folder", "~/HorizonDrive")
     app = MainWindow(auth_manager, sync_dir=sync_dir)
+
+    # Generate tray icons and set up system tray
+    icons = _create_tray_icons()
+    app.tray_icons = icons
+
+    # Tray menu callbacks (must marshal into CTk thread via after())
+    def restore_window(icon, item):
+        app.after(0, app.restore_window)
+
+    def toggle_sync(icon, item):
+        app.after(0, app.toggle_sync)
+
+    def force_quit(icon, item):
+        app.after(0, app.force_quit)
+
+    menu = pystray.Menu(
+        pystray.MenuItem('Open', restore_window, default=True),
+        pystray.MenuItem('Pause Sync', toggle_sync),
+        pystray.MenuItem('Quit', force_quit),
+    )
+
+    tray_icon = pystray.Icon('horizon_drive', icons['uptodate'], 'Horizon Drive', menu)
+    app.tray_icon = tray_icon
+
+    # Run tray in detached mode (separate daemon thread)
+    tray_icon.run_detached()
+
     app.mainloop()
 
 
