@@ -7,7 +7,6 @@
 
 **Horizon Drive** is a premium, native Google Drive desktop client for Linux (optimized for LMDE 7). Designed for power users transitioning from Windows, it brings the "Fluent Design" aesthetic and bulletproof syncing to the Linux desktop.
 
-![Horizon Drive Preview](assets/preview.png)
 
 ## ✨ Features
 
