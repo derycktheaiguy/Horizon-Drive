@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "horizon-drive"
-version = "0.2.1"
+version = "0.2.2"
 description = "Premium Google Drive desktop client for Linux"
 requires-python = ">=3.12"
 license = {text = "MIT"}

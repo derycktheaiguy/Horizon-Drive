@@ -67,10 +67,10 @@ Requires **Python 3.12+** and `tk` on your system:
 
 ```bash
 # pipx (isolated, recommended)
-pipx install horizon_drive-0.2.1-py3-none-any.whl
+pipx install ./horizon_drive-*-py3-none-any.whl
 
 # or plain pip
-pip install horizon_drive-0.2.1-py3-none-any.whl
+pip install ./horizon_drive-*-py3-none-any.whl
 ```
 
 Then launch with `horizon-drive`.
@@ -118,7 +118,7 @@ Your sync folder defaults to `~/HorizonDrive` and is created automatically.
 
 ## ⚙️ Configuration
 
-Settings live in a simple `config.json`:
+Settings live in `~/.config/horizon-drive/config.json`:
 
 ```json
 {
@@ -127,12 +127,18 @@ Settings live in a simple `config.json`:
 }
 ```
 
-> **Note:** the app looks for `config.json` in the directory it is launched **from**. If you change your sync folder in the Setup Wizard, the file is written next to wherever you started the app. Simplest fix: delete `config.json` and re-run the wizard from the same place you normally launch Horizon Drive from (usually your home directory).
+Edit the file while Horizon Drive is not running, then relaunch.
 
-To reset everything (including stored credentials):
+> **Upgrading from ≤ v0.2.1?** Older versions stored `config.json` in the launch directory. Your existing file is picked up automatically — or simply move it:
+> ```bash
+> mkdir -p ~/.config/horizon-drive
+> mv config.json ~/.config/horizon-drive/
+> ```
+
+To reset configuration (stored credentials live separately in your keyring):
 
 ```bash
-rm config.json
+rm ~/.config/horizon-drive/config.json
 python3 -c "import keyring; [keyring.delete_password('HorizonDrive', k) for k in ('client_id','client_secret','refresh_token')]"
 ```
 

@@ -1,9 +1,10 @@
-import json
 import logging
 import os
 from tkinter import filedialog
 
 import customtkinter as ctk
+
+from horizon_drive.config import save_config
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,9 @@ class SetupWizard(ctk.CTkToplevel):
         self.config["local_folder"] = self.folder_entry.get().strip()
         self.config["sync_mode"] = self.mode_var.get()
 
-        # Save config
-        config_path = os.path.join(os.getcwd(), "config.json")
+        # Save config to ~/.config/horizon-drive/
         try:
-            with open(config_path, "w") as f:
-                json.dump(self.config, f, indent=4)
+            save_config(self.config)
 
             self.destroy()
             self.on_complete(self.config)

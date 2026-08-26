@@ -4,7 +4,6 @@ Horizon Drive - Entry Point
 LMDE 7 / X11 Compatible Version
 """
 
-import json
 import logging
 import os
 
@@ -25,18 +24,8 @@ import pystray  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
 from horizon_drive.auth import AuthManager  # noqa: E402
+from horizon_drive.config import load_config  # noqa: E402
 from horizon_drive.gui import MainWindow, SetupWizard, WelcomeWizard  # noqa: E402
-
-
-def load_config():
-    config_path = os.path.join(os.getcwd(), "config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logging.warning(f"Error loading config: {e}")
-    return None
 
 
 def _create_tray_icons():
