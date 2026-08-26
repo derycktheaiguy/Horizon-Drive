@@ -1,0 +1,53 @@
+{
+    "id": "io.github.derycktheaiguy.HorizonDrive",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "24.08",
+    "sdk": "org.freedesktop.Sdk",
+    "command": "horizon-drive",
+    "finish-args": [
+        "--share=ipc",
+        "--share=network",
+        "--socket=x11",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--device=dri",
+        "--filesystem=home",
+        "--talk-name=org.freedesktop.Notifications",
+        "--talk-name=org.kde.StatusNotifierWatcher",
+        "--talk-name=org.freedesktop.secrets"
+    ],
+    "modules": [
+        {
+            "name": "horizon-drive",
+            "buildsystem": "simple",
+            "build-options": {
+                "build-args": [
+                    "--share=network"
+                ]
+            },
+            "build-commands": [
+                "pip3 install --prefix=${FLATPAK_DEST} .",
+                "python3 -c \"from PIL import Image, ImageDraw; img = Image.new('RGBA', (256, 256), (0, 0, 0, 0)); d = ImageDraw.Draw(img); d.ellipse([16, 16, 240, 240], fill=(52, 168, 83, 255)); d.line([(80, 132), (116, 168), (176, 96)], fill=(255, 255, 255, 255), width=20); img.save('/app/share/icons/hicolor/256x256/apps/io.github.derycktheaiguy.HorizonDrive.png')\"",
+                "mkdir -p ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps",
+                "install -Dm644 packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.desktop ${FLATPAK_DEST}/share/applications/io.github.derycktheaiguy.HorizonDrive.desktop",
+                "install -Dm644 packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.derycktheaiguy.HorizonDrive.metainfo.xml"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "../.."
+                },
+                {
+                    "type": "file",
+                    "path": "io.github.derycktheaiguy.HorizonDrive.desktop",
+                    "dest-filename": "packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.desktop"
+                },
+                {
+                    "type": "file",
+                    "path": "io.github.derycktheaiguy.HorizonDrive.metainfo.xml",
+                    "dest-filename": "packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.metainfo.xml"
+                }
+            ]
+        }
+    ]
+}

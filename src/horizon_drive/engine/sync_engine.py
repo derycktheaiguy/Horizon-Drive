@@ -1,15 +1,16 @@
-import os
-import time
 import io
 import logging
+import os
 import threading
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+import time
+
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
 
-FILES_FIELDS = 'files(id,name,mimeType,size,modifiedTime)'
+FILES_FIELDS = "files(id,name,mimeType,size,modifiedTime)"
 
 
 class SyncHandler(FileSystemEventHandler):
@@ -85,20 +86,20 @@ class SyncEngine:
     def _add_transfer(self, transfer_id, transfer_type, filename, total_bytes):
         with self._transfer_lock:
             self._active_transfers[transfer_id] = {
-                'type': transfer_type,
-                'filename': filename,
-                'progress': 0.0,
-                'bytes_transferred': 0,
-                'total_bytes': total_bytes,
+                "type": transfer_type,
+                "filename": filename,
+                "progress": 0.0,
+                "bytes_transferred": 0,
+                "total_bytes": total_bytes,
             }
 
     def _update_transfer(self, transfer_id, bytes_transferred, total_bytes):
         with self._transfer_lock:
             if transfer_id in self._active_transfers:
                 t = self._active_transfers[transfer_id]
-                t['bytes_transferred'] = bytes_transferred
-                t['total_bytes'] = total_bytes
-                t['progress'] = bytes_transferred / total_bytes if total_bytes > 0 else 0.0
+                t["bytes_transferred"] = bytes_transferred
+                t["total_bytes"] = total_bytes
+                t["progress"] = bytes_transferred / total_bytes if total_bytes > 0 else 0.0
 
     def _remove_transfer(self, transfer_id):
         with self._transfer_lock:
@@ -109,7 +110,7 @@ class SyncEngine:
         total_bytes = os.path.getsize(local_path)
         transfer_id = f"upload:{filename}"
 
-        self._add_transfer(transfer_id, 'upload', filename, total_bytes)
+        self._add_transfer(transfer_id, "upload", filename, total_bytes)
 
         # UI Feedback: Syncing
         if self.status_callback:
@@ -118,23 +119,20 @@ class SyncEngine:
         try:
             service = self.auth_manager.get_service()
 
-            file_metadata = {'name': filename}
+            file_metadata = {"name": filename}
             media = MediaFileUpload(local_path, resumable=True)
 
             logger.info("SyncEngine: Uploading %s to Google Drive...", filename)
 
-            request = service.files().create(body=file_metadata,
-                                             media_body=media,
-                                             fields='id')
+            request = service.files().create(body=file_metadata, media_body=media, fields="id")
             response = None
-            last_progress = 0
             while response is None:
                 status, response = request.next_chunk()
                 if status:
                     bytes_done = int(status.resumable_progress)
                     self._update_transfer(transfer_id, bytes_done, total_bytes)
 
-            logger.info("SyncEngine: Uploaded successfully. File ID: %s", response.get('id'))
+            logger.info("SyncEngine: Uploaded successfully. File ID: %s", response.get("id"))
 
         except Exception as e:
             logger.error("SyncEngine: Error uploading file %s: %s", filename, e)
@@ -153,12 +151,12 @@ class SyncEngine:
         """Fetches files from the root of Google Drive."""
         try:
             service = self.auth_manager.get_service()
-            results = service.files().list(
-                pageSize=50,
-                fields=f"nextPageToken,{FILES_FIELDS}",
-                q="'root' in parents and trashed = false"
-            ).execute()
-            return results.get('files', [])
+            results = (
+                service.files()
+                .list(pageSize=50, fields=f"nextPageToken,{FILES_FIELDS}", q="'root' in parents and trashed = false")
+                .execute()
+            )
+            return results.get("files", [])
         except Exception as e:
             logger.error("SyncEngine: Error listing files: %s", e)
             return []
@@ -167,13 +165,12 @@ class SyncEngine:
         """Fetches most recently modified files from Google Drive."""
         try:
             service = self.auth_manager.get_service()
-            results = service.files().list(
-                orderBy='modifiedTime desc',
-                pageSize=limit,
-                fields=FILES_FIELDS,
-                q='trashed=false'
-            ).execute()
-            return results.get('files', [])
+            results = (
+                service.files()
+                .list(orderBy="modifiedTime desc", pageSize=limit, fields=FILES_FIELDS, q="trashed=false")
+                .execute()
+            )
+            return results.get("files", [])
         except Exception as e:
             logger.error("SyncEngine: Error listing recent files: %s", e)
             return []
@@ -182,12 +179,8 @@ class SyncEngine:
         """Fetches starred files from Google Drive."""
         try:
             service = self.auth_manager.get_service()
-            results = service.files().list(
-                pageSize=50,
-                fields=FILES_FIELDS,
-                q='starred=true'
-            ).execute()
-            return results.get('files', [])
+            results = service.files().list(pageSize=50, fields=FILES_FIELDS, q="starred=true").execute()
+            return results.get("files", [])
         except Exception as e:
             logger.error("SyncEngine: Error listing starred files: %s", e)
             return []
@@ -196,12 +189,8 @@ class SyncEngine:
         """Fetches trashed files from Google Drive."""
         try:
             service = self.auth_manager.get_service()
-            results = service.files().list(
-                pageSize=50,
-                fields=FILES_FIELDS,
-                q='trashed=true'
-            ).execute()
-            return results.get('files', [])
+            results = service.files().list(pageSize=50, fields=FILES_FIELDS, q="trashed=true").execute()
+            return results.get("files", [])
         except Exception as e:
             logger.error("SyncEngine: Error listing trashed files: %s", e)
             return []
@@ -210,12 +199,8 @@ class SyncEngine:
         """Fetches files shared with the user."""
         try:
             service = self.auth_manager.get_service()
-            results = service.files().list(
-                pageSize=50,
-                fields=FILES_FIELDS,
-                q='sharedWithMe=true'
-            ).execute()
-            return results.get('files', [])
+            results = service.files().list(pageSize=50, fields=FILES_FIELDS, q="sharedWithMe=true").execute()
+            return results.get("files", [])
         except Exception as e:
             logger.error("SyncEngine: Error listing shared files: %s", e)
             return []
@@ -225,7 +210,7 @@ class SyncEngine:
         local_path = os.path.join(self.sync_dir, filename)
         transfer_id = f"download:{filename}"
 
-        self._add_transfer(transfer_id, 'download', filename, 0)
+        self._add_transfer(transfer_id, "download", filename, 0)
 
         if self.status_callback:
             self.status_callback("Syncing...", f"Downloading {filename}")
@@ -245,7 +230,7 @@ class SyncEngine:
                     bytes_done = status.resumable_progress
                     self._update_transfer(transfer_id, bytes_done, total)
 
-            with open(local_path, 'wb') as f:
+            with open(local_path, "wb") as f:
                 f.write(fh.getbuffer())
 
             logger.info("SyncEngine: Downloaded %s", filename)
@@ -271,12 +256,12 @@ class SyncEngine:
                     break
 
                 # Flat files only for now, skip folders
-                if cf['mimeType'] == 'application/vnd.google-apps.folder':
+                if cf["mimeType"] == "application/vnd.google-apps.folder":
                     continue
 
-                if cf['name'] not in local_files:
-                    logger.info("SyncEngine: Finding remote file %s missing locally. Downloading...", cf['name'])
-                    self.download_file(cf['id'], cf['name'])
+                if cf["name"] not in local_files:
+                    logger.info("SyncEngine: Finding remote file %s missing locally. Downloading...", cf["name"])
+                    self.download_file(cf["id"], cf["name"])
 
             # Sleep for 60 seconds unless stopped
             for _ in range(60):

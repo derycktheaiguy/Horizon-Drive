@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Horizon Drive
+GenericName=Google Drive Client
+Comment=Premium Google Drive desktop client for Linux
+Exec=horizon-drive
+Icon=io.github.derycktheaiguy.HorizonDrive
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=google;drive;sync;cloud;backup;
+StartupNotify=true

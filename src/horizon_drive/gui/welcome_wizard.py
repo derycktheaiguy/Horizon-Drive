@@ -1,6 +1,7 @@
-import customtkinter as ctk
-import webbrowser
 import logging
+import webbrowser
+
+import customtkinter as ctk
 
 logger = logging.getLogger(__name__)
 
@@ -26,23 +27,25 @@ class WelcomeWizard(ctk.CTkToplevel):
         self.main_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.main_frame.grid_columnconfigure(0, weight=1)
 
-        self.title_label = ctk.CTkLabel(self.main_frame, text="Horizon Drive Setup", font=ctk.CTkFont(size=24, weight="bold"))
+        self.title_label = ctk.CTkLabel(
+            self.main_frame, text="Horizon Drive Setup", font=ctk.CTkFont(size=24, weight="bold")
+        )
         self.title_label.pack(pady=(30, 10))
 
         self.info_label = ctk.CTkLabel(
-            self.main_frame, 
+            self.main_frame,
             text="To ensure maximum privacy and speed, Horizon Drive uses your own personal Google connection.",
             wraplength=500,
-            justify="center"
+            justify="center",
         )
         self.info_label.pack(pady=10)
 
         self.keys_button = ctk.CTkButton(
-            self.main_frame, 
-            text="Get My Secure Keys", 
+            self.main_frame,
+            text="Get My Secure Keys",
             command=self._open_help_doc,
             fg_color="#3D3D3D",
-            hover_color="#4D4D4D"
+            hover_color="#4D4D4D",
         )
         self.keys_button.pack(pady=10)
 
@@ -53,15 +56,17 @@ class WelcomeWizard(ctk.CTkToplevel):
 
         self.client_secret_label = ctk.CTkLabel(self.main_frame, text="Client Secret:")
         self.client_secret_label.pack(pady=(10, 0), anchor="w", padx=40)
-        self.client_secret_entry = ctk.CTkEntry(self.main_frame, width=400, placeholder_text="Paste your Client Secret here", show="*")
+        self.client_secret_entry = ctk.CTkEntry(
+            self.main_frame, width=400, placeholder_text="Paste your Client Secret here", show="*"
+        )
         self.client_secret_entry.pack(pady=5)
 
         self.auth_button = ctk.CTkButton(
-            self.main_frame, 
-            text="Connect to Google Drive", 
+            self.main_frame,
+            text="Connect to Google Drive",
             command=self._start_auth,
             height=40,
-            font=ctk.CTkFont(weight="bold")
+            font=ctk.CTkFont(weight="bold"),
         )
         self.auth_button.pack(pady=30)
 

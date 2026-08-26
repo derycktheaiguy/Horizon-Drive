@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/HorizonHubMedia/Horizon-Drive/actions/workflows/ci.yml/badge.svg)](https://github.com/HorizonHubMedia/Horizon-Drive/actions/workflows/ci.yml)
+[![CI](https://github.com/derycktheaiguy/Horizon-Drive/actions/workflows/ci.yml/badge.svg)](https://github.com/derycktheaiguy/Horizon-Drive/actions/workflows/ci.yml)
 [![OS: Linux](https://img.shields.io/badge/OS-Linux-orange.svg)](https://www.linux.org/)
 
 **Horizon Drive** is a premium, native Google Drive desktop client for Linux (optimized for LMDE 7). Designed for power users transitioning from Windows, it brings the "Fluent Design" aesthetic and bulletproof syncing to the Linux desktop.
@@ -31,7 +31,7 @@
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/HorizonHubMedia/Horizon-Drive.git
+   git clone https://github.com/derycktheaiguy/Horizon-Drive.git
    cd Horizon-Drive
    ```
 
@@ -46,16 +46,32 @@
    pip install .
 
    # Or install in editable/dev mode
-   pip install -e .
+   pip install -e .[dev]
    ```
 
 4. **Launch the application**:
    ```bash
-   python3 src/main.py
-
-   # Or if installed via pip:
    horizon-drive
+
+   # Or from a source checkout (no install):
+   PYTHONPATH=src python3 -m horizon_drive.main
    ```
+
+### Development
+
+```bash
+pip install -e .[dev]
+
+# Run the test suite
+pytest
+
+# Lint and format checks
+ruff check src/ tests/
+ruff format --check src/ tests/
+
+# Build a wheel
+python -m build --wheel
+```
 
 > **Coming soon:** `pip install horizon-drive` will be available on PyPI.
 

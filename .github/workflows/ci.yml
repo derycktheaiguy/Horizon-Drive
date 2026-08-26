@@ -19,22 +19,32 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff build
+          pip install -e .[dev]
 
       - name: Lint with ruff
-        run: ruff check src/
-
-      - name: Syntax check
         run: |
-          python -m py_compile src/main.py
-          python -m py_compile src/auth.py
-          python -m py_compile src/engine/sync_engine.py
-          python -m py_compile src/gui/main_window.py
-          python -m py_compile src/gui/welcome_wizard.py
-          python -m py_compile src/gui/setup_wizard.py
+          ruff check src/ tests/
+          ruff format --check src/ tests/
 
-      - name: Build check
+      - name: Run tests
+        run: pytest -v
+
+      - name: Build wheel
         run: python -m build --wheel
+
+      - name: Smoke-test installed entry point
+        run: |
+          pip install dist/*.whl --force-reinstall --no-deps
+          python -c "
+          import horizon_drive.auth
+          import horizon_drive.engine.sync_engine
+          print('installed package imports OK')
+          "

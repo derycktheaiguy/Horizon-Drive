@@ -1,17 +1,17 @@
-import os
-import json
 import logging
+
 import keyring
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
+
 class AuthManager:
     SERVICE_NAME = "HorizonDrive"
-    SCOPES = ['https://www.googleapis.com/auth/drive']
+    SCOPES = ["https://www.googleapis.com/auth/drive"]
 
     def __init__(self):
         self.client_id = keyring.get_password(self.SERVICE_NAME, "client_id")
@@ -35,7 +35,7 @@ class AuthManager:
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 token_uri="https://oauth2.googleapis.com/token",
-                scopes=self.SCOPES
+                scopes=self.SCOPES,
             )
         return None
 
@@ -59,7 +59,7 @@ class AuthManager:
         # Save the refresh token to the keyring
         if self.credentials and self.credentials.refresh_token:
             keyring.set_password(self.SERVICE_NAME, "refresh_token", self.credentials.refresh_token)
-        
+
         return self.credentials
 
     def get_service(self):
@@ -69,8 +69,8 @@ class AuthManager:
                 self.credentials.refresh(Request())
             else:
                 self.authenticate()
-        
-        return build('drive', 'v3', credentials=self.credentials)
+
+        return build("drive", "v3", credentials=self.credentials)
 
     def is_authenticated(self):
         """Checks if the user is currently authenticated."""
@@ -85,12 +85,12 @@ class AuthManager:
         """
         try:
             service = self.get_service()
-            about = service.about().get(fields='storageQuota').execute()
-            quota = about.get('storageQuota', {})
+            about = service.about().get(fields="storageQuota").execute()
+            quota = about.get("storageQuota", {})
             return {
-                'limit': quota.get('limit', '0'),
-                'usage': quota.get('usage', '0'),
-                'usageInDrive': quota.get('usageInDrive', '0'),
+                "limit": quota.get("limit", "0"),
+                "usage": quota.get("usage", "0"),
+                "usageInDrive": quota.get("usageInDrive", "0"),
             }
         except Exception as e:
             logger.error("AuthManager: Failed to fetch storage quota: %s", e)

@@ -4,28 +4,28 @@ Horizon Drive - Entry Point
 LMDE 7 / X11 Compatible Version
 """
 
-import os
-import sys
+import json
 import logging
+import os
 
 # CRITICAL: Set environment variables BEFORE any Tkinter/CTk imports
 # This prevents X11 BadLength errors on Linux Mint / LMDE
-os.environ['TK_SCALING'] = '1.0'
-os.environ['GDK_SCALE'] = '1'
-os.environ['GDK_DPI_SCALE'] = '1'
+os.environ["TK_SCALING"] = "1.0"
+os.environ["GDK_SCALE"] = "1"
+os.environ["GDK_DPI_SCALE"] = "1"
 
-import customtkinter as ctk
+import customtkinter as ctk  # noqa: E402  (must import after env vars above)
 
 # Disable all automatic DPI handling
 ctk.deactivate_automatic_dpi_awareness()
 ctk.set_widget_scaling(1.0)
 ctk.set_window_scaling(1.0)
 
-import json
-import pystray
-from PIL import Image, ImageDraw
-from auth import AuthManager
-from gui import MainWindow, WelcomeWizard, SetupWizard
+import pystray  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
+
+from horizon_drive.auth import AuthManager  # noqa: E402
+from horizon_drive.gui import MainWindow, SetupWizard, WelcomeWizard  # noqa: E402
 
 
 def load_config():
@@ -49,33 +49,30 @@ def _create_tray_icons():
     size = 64
 
     # Grey rounded square — paused/offline
-    grey = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    grey = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(grey)
     draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(128, 128, 128, 255))
 
     # Blue rounded square — syncing
-    blue = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    blue = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(blue)
     draw.rounded_rectangle([4, 4, 60, 60], radius=12, fill=(66, 133, 244, 255))
 
     # Green circle with white checkmark — up to date
-    green = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    green = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(green)
     draw.ellipse([8, 8, 56, 56], fill=(52, 168, 83, 255))
     draw.line([(22, 33), (29, 42), (42, 24)], fill=(255, 255, 255, 255), width=5)
 
     return {
-        'paused': grey,
-        'syncing': blue,
-        'uptodate': green,
+        "paused": grey,
+        "syncing": blue,
+        "uptodate": green,
     }
 
 
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(name)s] %(levelname)s: %(message)s'
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     auth_manager = AuthManager()
     config = load_config()
 
@@ -83,7 +80,7 @@ def main():
         # Wizard flow: Auth -> Setup -> Main
         temp_root = ctk.CTk()
         temp_root.title("Horizon Drive - Setup")
-        
+
         def on_auth_success():
             if not config:
                 show_setup_wizard(auth_manager, temp_root)
@@ -91,7 +88,7 @@ def main():
                 temp_root.destroy()
                 show_main_app(auth_manager, config)
 
-        wizard = WelcomeWizard(auth_manager, on_success=on_auth_success)
+        WelcomeWizard(auth_manager, on_success=on_auth_success)
         temp_root.mainloop()
     elif not config:
         # Already authed, but no config
@@ -104,12 +101,12 @@ def show_setup_wizard(auth_manager, parent_root=None):
     if not parent_root:
         parent_root = ctk.CTk()
         parent_root.withdraw()
-    
+
     def on_setup_complete(config):
         parent_root.destroy()
         show_main_app(auth_manager, config)
-    
-    wizard = SetupWizard(on_complete=on_setup_complete)
+
+    SetupWizard(on_complete=on_setup_complete)
     parent_root.mainloop()
 
 
@@ -132,12 +129,12 @@ def show_main_app(auth_manager, config):
         app.after(0, app.force_quit)
 
     menu = pystray.Menu(
-        pystray.MenuItem('Open', restore_window, default=True),
-        pystray.MenuItem('Pause Sync', toggle_sync),
-        pystray.MenuItem('Quit', force_quit),
+        pystray.MenuItem("Open", restore_window, default=True),
+        pystray.MenuItem("Pause Sync", toggle_sync),
+        pystray.MenuItem("Quit", force_quit),
     )
 
-    tray_icon = pystray.Icon('horizon_drive', icons['uptodate'], 'Horizon Drive', menu)
+    tray_icon = pystray.Icon("horizon_drive", icons["uptodate"], "Horizon Drive", menu)
     app.tray_icon = tray_icon
 
     # Run tray in detached mode (separate daemon thread)

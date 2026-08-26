@@ -5,6 +5,5 @@ google-auth-httplib2
 google-auth-oauthlib
 keyring
 watchdog
-PyQt6
 Pillow
 pystray

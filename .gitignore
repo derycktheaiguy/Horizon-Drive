@@ -22,6 +22,7 @@ env.bak/
 venv.bak/
 
 # Project specific
+config.json
 client_secrets.json
 data/
 *.png
@@ -41,10 +42,5 @@ build/
 *.egg-info/
 .ruff_cache/
 
-
-
-
-
-
-
-https://github.com/derycktheaiguy/Horizon-Drive.git
+# Python cache
+.pytest_cache/

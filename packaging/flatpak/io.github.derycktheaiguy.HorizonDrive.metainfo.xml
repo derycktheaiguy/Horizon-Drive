@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.derycktheaiguy.HorizonDrive</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Horizon Drive</name>
+  <summary>Premium Google Drive desktop client for Linux</summary>
+  <description>
+    <p>
+      Horizon Drive is a native Google Drive desktop client for Linux with a
+      polished Fluent-style dark UI. It offers two-way background sync, a live
+      transfer queue, storage quota display, and smart views (Recent, Starred,
+      Trash, Shared with me).
+    </p>
+    <p>
+      Credentials are stored exclusively in the system keyring — never in
+      plain-text files. Users bring their own Google Cloud API credentials
+      (BYOK) for privacy and speed.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.derycktheaiguy.HorizonDrive.desktop</launchable>
+  <url type="homepage">https://github.com/derycktheaiguy/Horizon-Drive</url>
+  <url type="bugtracker">https://github.com/derycktheaiguy/Horizon-Drive/issues</url>
+  <developer_name>Horizon Hub Media</developer_name>
+  <categories>
+    <category>Network</category>
+    <category>FileTransfer</category>
+  </categories>
+  <releases>
+    <release version="0.2.0" date="2026-08-26">
+      <description>
+        <p>Production polish: system tray with live status icons, real-time transfer queue, live storage quota.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>
