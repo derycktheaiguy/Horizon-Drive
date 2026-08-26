@@ -56,17 +56,19 @@ jobs:
       - name: Assemble AppDir
         run: |
           mkdir -p AppDir/usr/bin
-          cp dist/horizon-drive/horizon-drive AppDir/usr/bin/
-          cp packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.desktop AppDir/horizon-drive.desktop
+          cp -r dist/horizon-drive/* AppDir/usr/bin/
+          chmod +x AppDir/usr/bin/horizon-drive
+          sed "s/^Icon=.*/Icon=io.github.derycktheaiguy.HorizonDrive/" \
+            packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.desktop > AppDir/horizon-drive.desktop
           python3 -c "
           from PIL import Image, ImageDraw
           img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
           d = ImageDraw.Draw(img)
           d.ellipse([16, 16, 240, 240], fill=(52, 168, 83, 255))
           d.line([(80, 132), (116, 168), (176, 96)], fill=(255, 255, 255, 255), width=20)
-          img.save('AppDir/horizon-drive.png')
+          img.save('AppDir/io.github.derycktheaiguy.HorizonDrive.png')
           "
-          printf '#!/bin/sh\nexec /usr/bin/env horizon-drive "$@"\n' > AppDir/AppRun
+          printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/horizon-drive" "$@"\n' > AppDir/AppRun
           chmod +x AppDir/AppRun
 
       - name: Build AppImage
