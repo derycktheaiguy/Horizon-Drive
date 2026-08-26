@@ -44,3 +44,8 @@ build/
 
 # Python cache
 .pytest_cache/
+
+# Build/test artifacts (never commit)
+AppDir/
+*.AppImage
+squashfs-root/
