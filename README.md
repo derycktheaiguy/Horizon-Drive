@@ -61,6 +61,22 @@ flatpak install --user ./Horizon-Drive-*-x86_64.flatpak
 flatpak run io.github.derycktheaiguy.HorizonDrive
 ```
 
+#### Pop!_OS Wayland workaround
+
+Tkinter currently requires X11. On Pop!_OS Wayland, if the normal command
+exits with `no display name` or `$DISPLAY`, launch it through XWayland:
+
+```bash
+flatpak run --socket=x11 \
+  --env=DISPLAY="${DISPLAY:-:0}" \
+  --unset-env=WAYLAND_DISPLAY \
+  --env=GDK_BACKEND=x11 \
+  io.github.derycktheaiguy.HorizonDrive
+```
+
+This workaround was tested on Pop!_OS. The AppImage does not need these flags
+and is the simpler choice on Wayland systems.
+
 ### Option 3 — Wheel (pip / pipx)
 
 Requires **Python 3.12+** and `tk` on your system:
