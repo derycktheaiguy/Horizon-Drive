@@ -81,6 +81,7 @@ def main():
         # Wizard flow: Auth -> Setup -> Main
         temp_root = ctk.CTk()
         temp_root.title("Horizon Drive - Setup")
+        temp_root.withdraw()
 
         def on_auth_success():
             if not config:
@@ -89,7 +90,7 @@ def main():
                 temp_root.destroy()
                 show_main_app(auth_manager, config)
 
-        WelcomeWizard(auth_manager, on_success=on_auth_success)
+        WelcomeWizard(temp_root, auth_manager, on_success=on_auth_success)
         temp_root.mainloop()
     elif not config:
         # Already authed, but no config
@@ -107,7 +108,7 @@ def show_setup_wizard(auth_manager, parent_root=None):
         parent_root.destroy()
         show_main_app(auth_manager, config)
 
-    SetupWizard(on_complete=on_setup_complete)
+    SetupWizard(parent_root, on_complete=on_setup_complete)
     parent_root.mainloop()
 
 

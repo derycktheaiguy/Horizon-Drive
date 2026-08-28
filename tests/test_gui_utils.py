@@ -3,6 +3,7 @@
 import pytest
 
 from horizon_drive.gui.main_window import MainWindow
+from horizon_drive.gui.welcome_wizard import GOOGLE_CREDENTIALS_URL, WelcomeWizard
 
 
 @pytest.fixture
@@ -60,3 +61,12 @@ def test_get_mime_icon_mapping(window):
 def test_mime_icon_treats_folder_separately(window):
     # Folders are handled by callers, but the icon fn should not crash on them.
     assert window._get_mime_icon("application/vnd.google-apps.folder")
+
+
+def test_secure_keys_button_opens_google_credentials(monkeypatch):
+    opened = []
+    monkeypatch.setattr("horizon_drive.gui.welcome_wizard.webbrowser.open", opened.append)
+
+    WelcomeWizard._open_help_doc(object())
+
+    assert opened == [GOOGLE_CREDENTIALS_URL]

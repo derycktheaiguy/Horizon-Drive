@@ -27,6 +27,11 @@
     <category>FileTransfer</category>
   </categories>
   <releases>
+    <release version="0.2.3" date="2026-08-27">
+      <description>
+        <p>Fixed secure-keys setup link and startup wizard window ownership on Linux desktops.</p>
+      </description>
+    </release>
     <release version="0.2.2" date="2026-08-26">
       <description>
         <p>Config now stored in ~/.config/horizon-drive/ (XDG standard) with automatic fallback to legacy locations.</p>

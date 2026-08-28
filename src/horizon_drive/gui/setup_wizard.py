@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class SetupWizard(ctk.CTkToplevel):
-    def __init__(self, on_complete):
-        super().__init__()
+    def __init__(self, master, on_complete):
+        super().__init__(master)
         self.on_complete = on_complete
 
         self.title("Horizon Drive - Initial Setup")
@@ -105,5 +105,5 @@ if __name__ == "__main__":
         print(f"Setup complete: {config}")
 
     app = ctk.CTk()
-    wizard = SetupWizard(dummy_complete)
+    wizard = SetupWizard(app, dummy_complete)
     app.mainloop()

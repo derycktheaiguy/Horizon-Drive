@@ -4,11 +4,12 @@ import webbrowser
 import customtkinter as ctk
 
 logger = logging.getLogger(__name__)
+GOOGLE_CREDENTIALS_URL = "https://console.cloud.google.com/apis/credentials"
 
 
 class WelcomeWizard(ctk.CTkToplevel):
-    def __init__(self, auth_manager, on_success):
-        super().__init__()
+    def __init__(self, master, auth_manager, on_success):
+        super().__init__(master)
 
         self.auth_manager = auth_manager
         self.on_success = on_success
@@ -74,8 +75,7 @@ class WelcomeWizard(ctk.CTkToplevel):
         self.status_label.pack(pady=5)
 
     def _open_help_doc(self):
-        # Placeholder for help doc
-        webbrowser.open("https://github.com/HorizonHubMedia/HorizonDrive/wiki/Setup")
+        webbrowser.open(GOOGLE_CREDENTIALS_URL)
 
     def _start_auth(self):
         client_id = self.client_id_entry.get().strip()
