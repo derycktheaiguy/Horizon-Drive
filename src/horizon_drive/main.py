@@ -20,7 +20,19 @@ ctk.deactivate_automatic_dpi_awareness()
 ctk.set_widget_scaling(1.0)
 ctk.set_window_scaling(1.0)
 
-import pystray  # noqa: E402
+# System tray support is optional. In some Flatpak runtimes the
+# AppIndicator D-Bus typelibs are unavailable, which makes importing
+# pystray raise. Degrade gracefully so the main window still launches.
+_TRY_TRAY = True
+try:
+    import pystray  # noqa: E402
+except Exception as exc:  # noqa: BLE001
+    import logging
+
+    logging.getLogger(__name__).warning("System tray unavailable: %s", exc)
+    pystray = None
+    _TRY_TRAY = False
+
 from PIL import Image, ImageDraw  # noqa: E402
 
 from horizon_drive.auth import AuthManager  # noqa: E402
@@ -103,31 +115,31 @@ def show_main_app(auth_manager, config):
     sync_dir = config.get("local_folder", "~/HorizonDrive")
     app = MainWindow(auth_manager, sync_dir=sync_dir)
 
-    # Generate tray icons and set up system tray
+    # Generate tray icons (used if a system tray is available)
     icons = _create_tray_icons()
     app.tray_icons = icons
 
-    # Tray menu callbacks (must marshal into CTk thread via after())
-    def restore_window(icon, item):
-        app.after(0, app.restore_window)
+    # System tray is optional: some Flatpak runtimes lack AppIndicator support.
+    if pystray is not None:
+        # Tray menu callbacks (must marshal into CTk thread via after())
+        def restore_window(icon, item):
+            app.after(0, app.restore_window)
 
-    def toggle_sync(icon, item):
-        app.after(0, app.toggle_sync)
+        def toggle_sync(icon, item):
+            app.after(0, app.toggle_sync)
 
-    def force_quit(icon, item):
-        app.after(0, app.force_quit)
+        def force_quit(icon, item):
+            app.after(0, app.force_quit)
 
-    menu = pystray.Menu(
-        pystray.MenuItem("Open", restore_window, default=True),
-        pystray.MenuItem("Pause Sync", toggle_sync),
-        pystray.MenuItem("Quit", force_quit),
-    )
+        menu = pystray.Menu(
+            pystray.MenuItem("Open", restore_window, default=True),
+            pystray.MenuItem("Pause Sync", toggle_sync),
+            pystray.MenuItem("Quit", force_quit),
+        )
 
-    tray_icon = pystray.Icon("horizon_drive", icons["uptodate"], "Horizon Drive", menu)
-    app.tray_icon = tray_icon
-
-    # Run tray in detached mode (separate daemon thread)
-    tray_icon.run_detached()
+        tray_icon = pystray.Icon("horizon_drive", icons["uptodate"], "Horizon Drive", menu)
+        app.tray_icon = tray_icon
+        tray_icon.run_detached()
 
     app.mainloop()
 
