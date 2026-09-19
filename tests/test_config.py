@@ -71,7 +71,7 @@ def test_non_dict_json_rejected(tmp_path, monkeypatch):
 
 def test_default_dir_uses_home_when_no_xdg_var(tmp_path, monkeypatch):
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("os.path.expanduser", lambda path: str(tmp_path / path.removeprefix("~/")))
 
     assert get_config_path() == str(tmp_path / ".config" / "horizon-drive" / "config.json")
 
@@ -79,3 +79,31 @@ def test_default_dir_uses_home_when_no_xdg_var(tmp_path, monkeypatch):
 def test_main_module_still_exposes_load_config():
     # entry point imports load_config from main; guard against regressions
     from horizon_drive.main import load_config  # noqa: F401
+
+
+def test_invalid_folder_and_mode_are_rejected(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    for config in (
+        {"local_folder": ""},
+        {"local_folder": "relative"},
+        {"local_folder": str(tmp_path), "sync_mode": "invalid"},
+    ):
+        with pytest.raises(ValueError):
+            save_config(config)
+
+
+def test_failed_atomic_replace_preserves_config(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    save_config(SAMPLE)
+
+    def fail(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("horizon_drive.config.os.replace", fail)
+    with pytest.raises(OSError):
+        save_config({**SAMPLE, "sync_mode": "Backup"})
+    assert load_config() == SAMPLE

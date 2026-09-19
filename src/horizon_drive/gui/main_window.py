@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import threading
 import webbrowser
 
@@ -12,11 +13,17 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(ctk.CTk):
-    def __init__(self, auth_manager, sync_dir="~/HorizonDrive"):
+    def __init__(self, auth_manager, sync_dir="~/HorizonDrive", sync_mode="Two-way"):
         super().__init__()
 
         self.auth_manager = auth_manager
-        self.sync_dir = sync_dir
+        self.sync_dir = os.path.abspath(os.path.expanduser(sync_dir))
+        self.sync_mode = sync_mode
+        self._ui_queue = queue.SimpleQueue()
+        self._view_generation = 0
+        self._cached_files = []
+        self._cached_title = ""
+        self._transfer_after = None
         self._after_ids = []
         self._is_closing = False
 
@@ -44,15 +51,14 @@ class MainWindow(ctk.CTk):
         self.sync_paused = False
         self._force_quit = False
 
-        # Initialize and Start Sync Engine
-        self.engine = SyncEngine(self.auth_manager, self.sync_dir, status_callback=self.update_sync_status)
-        self.engine.start()
-
-        # Start live quota refresh
-        self._refresh_quota()
-
+        self.engine = SyncEngine(
+            self.auth_manager, self.sync_dir, status_callback=self.update_sync_status, sync_mode=sync_mode
+        )
         self._build_sidebar()
         self._build_main_content()
+        self.after(100, self._drain_ui)
+        self.engine.start()
+        self._refresh_quota()
 
         # Safe Shutdown Protocol
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -123,7 +129,7 @@ class MainWindow(ctk.CTk):
         # Sidebar - Pitch Black (#121212)
         self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="#121212")
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(9, weight=1)
+        self.sidebar_frame.grid_rowconfigure(10, weight=1)
         self.sidebar_frame.grid_columnconfigure(0, weight=1)
 
         # Logo container with icon + text
@@ -146,7 +152,7 @@ class MainWindow(ctk.CTk):
             "👥  Shared with me", row=3, command=lambda: self._switch_view("Shared")
         )
         self.computers_button = self._create_sidebar_button(
-            "💻  Computers", row=4, command=lambda: self._switch_view("Computers")
+            "Activity", row=4, command=lambda: self._switch_view("Activity")
         )
 
         # Separator space
@@ -158,14 +164,16 @@ class MainWindow(ctk.CTk):
             "📊  Storage", row=7, command=lambda: self._switch_view("Storage")
         )
 
+        self._create_sidebar_button("Preferences", row=8, command=self._show_preferences)
+
         # --- STORAGE SECTION (Pinned to bottom) ---
         self.sidebar_bottom_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.sidebar_bottom_frame.grid(row=9, column=0, sticky="ew", padx=15, pady=20)
+        self.sidebar_bottom_frame.grid(row=10, column=0, sticky="ew", padx=15, pady=20)
 
         # Mini Quota
         self.sidebar_quota_label = ctk.CTkLabel(
             self.sidebar_bottom_frame,
-            text="Storage (45%)",
+            text="Loading storage...",
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color="#888888",
         )
@@ -174,7 +182,7 @@ class MainWindow(ctk.CTk):
         self.sidebar_quota_bar = ctk.CTkProgressBar(
             self.sidebar_bottom_frame, height=6, progress_color="#34A853", fg_color="#404040"
         )
-        self.sidebar_quota_bar.set(0.45)
+        self.sidebar_quota_bar.set(0)
         self.sidebar_quota_bar.pack(fill="x", pady=5, padx=5)
 
         self.buy_storage_btn = ctk.CTkButton(
@@ -189,7 +197,10 @@ class MainWindow(ctk.CTk):
         self.buy_storage_btn.pack(fill="x", pady=(10, 5))
 
         self.trash_indicator = ctk.CTkLabel(
-            self.sidebar_bottom_frame, text="🗑  Trash: 0 items", font=ctk.CTkFont(size=10), text_color="#666666"
+            self.sidebar_bottom_frame,
+            text="Deletions are not propagated",
+            font=ctk.CTkFont(size=10),
+            text_color="#666666",
         )
         self.trash_indicator.pack(anchor="w", padx=5)
 
@@ -227,10 +238,12 @@ class MainWindow(ctk.CTk):
         )
         self.sync_card.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
 
-        self.sync_title = ctk.CTkLabel(self.sync_card, text="Up to date", font=ctk.CTkFont(size=18, weight="bold"))
+        self.sync_title = ctk.CTkLabel(
+            self.sync_card, text="Checking files...", font=ctk.CTkFont(size=18, weight="bold")
+        )
         self.sync_title.pack(padx=20, pady=(15, 5), anchor="w")
         self.sync_subtitle = ctk.CTkLabel(
-            self.sync_card, text="Monitoring ~/HorizonDrive", font=ctk.CTkFont(size=12), text_color="#888888"
+            self.sync_card, text=f"Monitoring {self.sync_dir}", font=ctk.CTkFont(size=12), text_color="#888888"
         )
         self.sync_subtitle.pack(padx=20, pady=(0, 15), anchor="w")
 
@@ -249,6 +262,9 @@ class MainWindow(ctk.CTk):
         )
         self.transfer_btn.grid(row=0, column=1, sticky="nse")
 
+        self.pause_button = ctk.CTkButton(self.header_frame, text="Pause Sync", width=110, command=self.toggle_sync)
+        self.pause_button.grid(row=0, column=2, padx=(10, 0))
+
         # Search Bar & View Toggles
         self.search_row_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.search_row_frame.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="ew")
@@ -256,7 +272,7 @@ class MainWindow(ctk.CTk):
 
         self.search_entry = ctk.CTkEntry(
             self.search_row_frame,
-            placeholder_text="🔍  Search in Drive",
+            placeholder_text="Search this view",
             height=45,
             corner_radius=22,
             fg_color="#2D2D2D",
@@ -264,6 +280,7 @@ class MainWindow(ctk.CTk):
             font=ctk.CTkFont(size=14),
         )
         self.search_entry.grid(row=0, column=0, sticky="ew")
+        self.search_entry.bind("<KeyRelease>", lambda event: self._apply_search())
 
         self.view_toggle_frame = ctk.CTkFrame(self.search_row_frame, fg_color="transparent")
         self.view_toggle_frame.grid(row=0, column=1, padx=(15, 0))
@@ -307,65 +324,102 @@ class MainWindow(ctk.CTk):
 
         self._switch_view("Home")
 
-    def update_sync_status(self, title, subtitle):
-        """Thread-safe sync status update."""
+    def post_ui(self, callback):
+        """Workers only enqueue work. Tk calls run on the main thread."""
+        if not self._is_closing:
+            self._ui_queue.put(callback)
+
+    def _drain_ui(self):
         if self._is_closing:
             return
-        try:
-            after_id = self.after(0, lambda: self._update_ui_labels(title, subtitle))
-            self._after_ids.append(after_id)
+        for _ in range(100):
+            try:
+                callback = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                callback()
+            except Exception:
+                logger.exception("Could not update the interface")
+        self.after(100, self._drain_ui)
 
-            # Update tray icon based on status
+    def update_sync_status(self, title, subtitle):
+        self.post_ui(lambda: self._apply_status(title, subtitle))
+
+    def _apply_status(self, title, subtitle):
+        if self.sync_paused:
+            return
+        self._update_ui_labels(title, subtitle)
+        lower = title.lower()
+        if any(word in lower for word in ("paus", "offline", "error", "limited")):
+            status = "paused"
+        elif "sync" in lower:
+            status = "syncing"
+        else:
             status = "uptodate"
-            title_lower = title.lower()
-            if "sync" in title_lower:
-                status = "syncing"
-            elif "paus" in title_lower or "offline" in title_lower or "error" in title_lower:
-                status = "paused"
-            self.update_tray_status(status)
-        except Exception:
-            pass
+        self.update_tray_status(status)
 
     def _update_ui_labels(self, title, subtitle):
-        if self._is_closing:
-            return
-        try:
+        if not self._is_closing:
             self.sync_title.configure(text=title)
             self.sync_subtitle.configure(text=subtitle)
-        except Exception:
-            pass
 
     def _switch_view(self, view_name):
-        """Switch the main content area based on navigation selection."""
         if self._is_closing:
             return
-
+        self._view_generation += 1
+        generation = self._view_generation
+        self.current_view = view_name
+        self._cached_files = []
+        self._cached_title = ""
         for widget in self.content_frame.winfo_children():
             widget.destroy()
-
-        self.current_view = view_name
-
-        if view_name == "Home":
-            self._render_home_view()
-        elif view_name == "My Drive":
-            self._render_loading_state()
-            # Threaded fetch
-            threading.Thread(target=self._fetch_and_render_my_drive).start()
-        elif view_name == "Shared":
-            self._render_loading_state()
-            threading.Thread(target=self._fetch_and_render_shared, daemon=True).start()
-        elif view_name == "Computers":
-            self._render_placeholder_view(
-                "Computers", "Backup folders from your computers (requires Backup & Sync API)"
-            )
-        elif view_name == "Starred":
-            self._render_loading_state()
-            threading.Thread(target=self._fetch_and_render_starred, daemon=True).start()
-        elif view_name == "Trash":
-            self._render_loading_state()
-            threading.Thread(target=self._fetch_and_render_trashed, daemon=True).start()
-        elif view_name == "Storage":
+        if view_name == "Activity":
+            self._render_placeholder_view("Activity", "\n".join(self.engine.activity[-20:]) or "No transfers yet.")
+            return
+        if view_name == "Storage":
             self._render_storage_view()
+            return
+        fetchers = {
+            "Home": ("Recent Files", self.engine.list_recent_files),
+            "My Drive": ("My Drive", self.engine.list_files),
+            "Shared": ("Shared with me", self.engine.list_shared_with_me),
+            "Starred": ("Starred", self.engine.list_starred),
+            "Trash": ("Trash", self.engine.list_trashed),
+        }
+        if view_name not in fetchers:
+            return
+        title, fetcher = fetchers[view_name]
+        self._render_loading_state()
+
+        def fetch():
+            files = fetcher()
+
+            def render():
+                if generation == self._view_generation:
+                    self._cached_files = files
+                    self._cached_title = title
+                    self._apply_search()
+
+            self.post_ui(render)
+
+        threading.Thread(target=fetch, daemon=True).start()
+
+    def _apply_search(self):
+        if self._cached_title:
+            query = self.search_entry.get().casefold().strip()
+            files = [item for item in self._cached_files if query in item["name"].casefold()]
+            self._render_fetched_view(self._cached_title, files)
+
+    def _show_preferences(self):
+        from horizon_drive.gui.setup_wizard import SetupWizard
+
+        def saved(config):
+            self._update_ui_labels("Preferences saved", "Restart Horizon Drive to use the new folder or sync mode.")
+
+        wizard = SetupWizard(self, saved, {"local_folder": self.sync_dir, "sync_mode": self.sync_mode})
+        wizard.protocol("WM_DELETE_WINDOW", wizard.destroy)
+        wizard.finish_button.configure(text="Save for next restart")
 
     def _render_loading_state(self):
         """Shows a loading message while fetching data."""
@@ -373,46 +427,6 @@ class MainWindow(ctk.CTk):
             self.content_frame, text="Fetching files from Google Drive...", font=ctk.CTkFont(size=14)
         )
         self.loading_label.pack(pady=50)
-
-    def _fetch_and_render_my_drive(self):
-        """Background thread operation to list files."""
-        if not hasattr(self, "engine") or self.engine is None:
-            return
-
-        files = self.engine.list_files()
-        if not self._is_closing:
-            self.after(0, lambda: self._render_my_drive_view(files))
-
-    def _render_my_drive_view(self, cloud_files=None):
-        """My Drive view with real cloud data or placeholder."""
-        if self._is_closing:
-            return
-
-        # Clear loading state
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-
-        header_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        header_frame.pack(fill="x", padx=10, pady=(10, 20))
-
-        header = ctk.CTkLabel(header_frame, text="My Drive", font=ctk.CTkFont(size=20, weight="bold"))
-        header.pack(side="left")
-
-        if not cloud_files:
-            empty_label = ctk.CTkLabel(
-                self.content_frame,
-                text="Your Drive is empty or could not be loaded.",
-                font=ctk.CTkFont(size=14),
-                text_color="#666666",
-            )
-            empty_label.pack(pady=50)
-            return
-
-        # Render based on mode
-        if self.view_mode == "Grid":
-            self._render_grid_view(cloud_files)
-        else:
-            self._render_list_view(cloud_files)
 
     def _render_list_view(self, cloud_files):
         """Classic list view with folders at top."""
@@ -485,17 +499,18 @@ class MainWindow(ctk.CTk):
             self.list_view_btn.configure(fg_color="#2D2D2D")
             self.grid_view_btn.configure(fg_color="transparent")
         # Re-render if in My Drive
-        if self.current_view == "My Drive":
-            self._switch_view("My Drive")
+        self._apply_search()
 
     def _toggle_transfer_queue(self):
         self.show_transfer_queue = not self.show_transfer_queue
         if self.show_transfer_queue:
             self.transfer_panel.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="ew")
             self.transfer_btn.configure(fg_color="#1E1E1E")
-            self._render_transfer_queue()
             self._refresh_transfers()
         else:
+            if self._transfer_after:
+                self.after_cancel(self._transfer_after)
+                self._transfer_after = None
             self.transfer_panel.grid_forget()
             self.transfer_btn.configure(fg_color="#2D2D2D")
 
@@ -552,24 +567,10 @@ class MainWindow(ctk.CTk):
         return "📄"
 
     def _format_size(self, size_bytes):
-        size_bytes = int(size_bytes)
-        if size_bytes == 0:
-            return "0 B"
-        import math
-
-        size_name = ("B", "KB", "MB", "GB", "TB")
-        i = int(math.floor(math.log(size_bytes, 1024)))
-        p = math.pow(1024, i)
-        s = round(size_bytes / p, 2)
-        return f"{s} {size_name[i]}"
-
-    def _render_home_view(self):
-        """Home view with recent files from Google Drive."""
-        header = ctk.CTkLabel(self.content_frame, text="Recent Files", font=ctk.CTkFont(size=20, weight="bold"))
-        header.pack(padx=10, pady=(10, 20), anchor="w")
-
-        self._render_loading_state()
-        threading.Thread(target=self._fetch_and_render_home, daemon=True).start()
+        try:
+            return self._format_bytes_human(max(0, int(size_bytes or 0)))
+        except (ValueError, TypeError):
+            return "Unknown size"
 
     def _render_placeholder_view(self, title, message):
         """Generic placeholder for unimplemented views."""
@@ -584,17 +585,21 @@ class MainWindow(ctk.CTk):
         header = ctk.CTkLabel(self.content_frame, text="Storage", font=ctk.CTkFont(size=20, weight="bold"))
         header.pack(padx=10, pady=(10, 20), anchor="w")
 
+        generation = self._view_generation
+
         # Fetch quota in background
         def fetch_and_render():
             try:
                 quota = self.auth_manager.get_quota()
                 if self._is_closing:
                     return
-                self.after(0, lambda: self._render_storage_data(quota))
+                self.post_ui(lambda: self._render_storage_data(quota) if generation == self._view_generation else None)
             except Exception as e:
                 logger.error(f"Error fetching storage: {e}")
                 if not self._is_closing:
-                    self.after(0, lambda: self._render_storage_data(None))
+                    self.post_ui(
+                        lambda: self._render_storage_data(None) if generation == self._view_generation else None
+                    )
 
         threading.Thread(target=fetch_and_render, daemon=True).start()
 
@@ -616,7 +621,7 @@ class MainWindow(ctk.CTk):
 
             pct = (usage / limit) if limit > 0 else 0
             usage_str = self._format_bytes_human(usage)
-            limit_str = self._format_bytes_human(limit)
+            limit_str = self._format_bytes_human(limit) if limit else "no fixed limit"
             drive_str = self._format_bytes_human(usage_in_drive)
 
             # Large progress indicator
@@ -670,7 +675,7 @@ class MainWindow(ctk.CTk):
                 quota = self.auth_manager.get_quota()
                 if self._is_closing:
                     return
-                self.after(0, lambda: self._update_quota_ui(quota))
+                self.post_ui(lambda: self._update_quota_ui(quota))
             except Exception as e:
                 logger.error(f"Failed to fetch quota: {e}")
 
@@ -696,7 +701,7 @@ class MainWindow(ctk.CTk):
             if limit > 0:
                 pct = usage / limit
                 usage_str = self._format_bytes_human(usage)
-                limit_str = self._format_bytes_human(limit)
+                limit_str = self._format_bytes_human(limit) if limit else "no fixed limit"
 
                 try:
                     self.sidebar_quota_label.configure(text=f"Storage ({usage_str} / {limit_str})")
@@ -740,24 +745,22 @@ class MainWindow(ctk.CTk):
         self.on_closing()
 
     def toggle_sync(self):
-        """Pause or resume sync engine."""
-        self.sync_paused = not self.sync_paused
-        if self.sync_paused:
-            if hasattr(self, "engine") and self.engine:
-                try:
-                    self.engine.stop()
-                except Exception:
-                    pass
-            self._update_ui_labels("Paused", "Sync is paused")
+        try:
+            if not self.sync_paused:
+                self.engine.stop()
+                self.sync_paused = True
+                self._update_ui_labels("Paused", "Sync is paused")
+                self.pause_button.configure(text="Resume Sync")
+                self.update_tray_status("paused")
+            else:
+                self.engine.start()
+                self.sync_paused = False
+                self._update_ui_labels("Checking files...", "Resuming sync")
+                self.pause_button.configure(text="Pause Sync")
+                self.update_tray_status("syncing")
+        except Exception as exc:
+            self._update_ui_labels("Sync needs attention", str(exc))
             self.update_tray_status("paused")
-        else:
-            if hasattr(self, "engine") and self.engine:
-                try:
-                    self.engine.start()
-                except Exception:
-                    pass
-            self._update_ui_labels("Restarting...", "Resuming sync")
-            self.update_tray_status("syncing")
 
     def update_tray_status(self, status):
         """Update system tray icon. Accepts: 'syncing', 'uptodate', 'paused'."""
@@ -782,53 +785,9 @@ class MainWindow(ctk.CTk):
             self._render_transfer_queue()
         except Exception:
             pass
-        self.after(500, self._refresh_transfers)
+        self._transfer_after = self.after(500, self._refresh_transfers)
 
     # ─── Fetchers for Placeholder Views ────────────────────────────────
-
-    def _fetch_and_render_home(self):
-        """Background thread: fetch recent files for Home view."""
-        files = []
-        if hasattr(self, "engine") and self.engine:
-            try:
-                files = self.engine.list_recent_files(10)
-            except Exception as e:
-                logger.error(f"Error fetching recent files: {e}")
-        if not self._is_closing:
-            self.after(0, lambda: self._render_fetched_view("Recent Files", files))
-
-    def _fetch_and_render_shared(self):
-        """Background thread: fetch shared-with-me files."""
-        files = []
-        if hasattr(self, "engine") and self.engine:
-            try:
-                files = self.engine.list_shared_with_me()
-            except Exception as e:
-                logger.error(f"Error fetching shared files: {e}")
-        if not self._is_closing:
-            self.after(0, lambda: self._render_fetched_view("Shared with me", files))
-
-    def _fetch_and_render_starred(self):
-        """Background thread: fetch starred files."""
-        files = []
-        if hasattr(self, "engine") and self.engine:
-            try:
-                files = self.engine.list_starred()
-            except Exception as e:
-                logger.error(f"Error fetching starred files: {e}")
-        if not self._is_closing:
-            self.after(0, lambda: self._render_fetched_view("Starred", files))
-
-    def _fetch_and_render_trashed(self):
-        """Background thread: fetch trashed files."""
-        files = []
-        if hasattr(self, "engine") and self.engine:
-            try:
-                files = self.engine.list_trashed()
-            except Exception as e:
-                logger.error(f"Error fetching trashed files: {e}")
-        if not self._is_closing:
-            self.after(0, lambda: self._render_fetched_view("Trash", files))
 
     def _render_fetched_view(self, title, files):
         """Render fetched files in the current content area."""

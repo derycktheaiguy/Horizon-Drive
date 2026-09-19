@@ -9,6 +9,7 @@ canonical file is absent.
 import json
 import logging
 import os
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ CONFIG_FILE_NAME = "config.json"
 
 def get_config_dir():
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    if not os.path.isabs(base):
+        base = os.path.expanduser("~/.config")
     return os.path.join(base, APP_DIR_NAME)
 
 
@@ -45,7 +48,40 @@ def load_config():
         config = _read_json(legacy_path)
         if config is not None:
             logger.info("Using legacy config from %s", legacy_path)
-    return config
+    try:
+        return validate_config(config) if config is not None else None
+    except ValueError as exc:
+        logger.warning("Invalid configuration: %s", exc)
+        return None
+
+
+def validate_config(config):
+    folder = config.get("local_folder")
+    mode = config.get("sync_mode", "Two-way")
+    if not isinstance(folder, str) or not folder.strip():
+        raise ValueError("Choose a local sync folder.")
+    folder = os.path.expanduser(folder.strip())
+    if not os.path.isabs(folder):
+        raise ValueError("Choose an absolute folder path.")
+    if mode not in ("Two-way", "Backup"):
+        raise ValueError("Choose Two-way or Backup sync.")
+    return {**config, "local_folder": folder, "sync_mode": mode}
+
+
+def atomic_write_json(path, data):
+    """Replace metadata only after a complete write, preserving the old file on error."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".horizon-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=4)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def save_config(config):
@@ -53,7 +89,6 @@ def save_config(config):
     directory = get_config_dir()
     os.makedirs(directory, exist_ok=True)
     path = get_config_path()
-    with open(path, "w") as f:
-        json.dump(config, f, indent=4)
+    atomic_write_json(path, validate_config(config))
     logger.info("Saved config to %s", path)
     return path

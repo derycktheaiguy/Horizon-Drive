@@ -3,13 +3,20 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   build-wheel:
-    runs-on: ubuntu-latest
+    needs: validate
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +33,11 @@ jobs:
         with:
           name: wheel
           path: dist/*.whl
+          if-no-files-found: error
 
   build-appimage:
-    runs-on: ubuntu-latest
+    needs: validate
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -39,19 +48,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libgirepository1.0-dev
+          sudo apt-get install -y python3-tk libgirepository1.0-dev xvfb
 
       - name: Install app and PyInstaller
         run: pip install . pyinstaller
 
       - name: Build standalone binary
         run: |
-          pyinstaller --noconfirm --clean \
-            --name horizon-drive \
-            --collect-all customtkinter \
-            --collect-all pystray \
-            --hidden-import PIL._tkinter_finder \
-            src/horizon_drive/main.py
+          pyinstaller --noconfirm --clean horizon-drive.spec
 
       - name: Assemble AppDir
         run: |
@@ -73,45 +77,68 @@ jobs:
 
       - name: Build AppImage
         run: |
-          curl -sSLo appimagetool.AppImage \
+          curl --fail --location --retry 3 --output appimagetool.AppImage \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
-          export VERSION="${GITHUB_REF_NAME#v}"
+          export VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$VERSION" ]]; then
+            echo "Release tag must match pyproject.toml version"
+            exit 1
+          fi
           ./appimagetool.AppImage --appimage-extract-and-run \
             AppDir "HorizonDrive-${VERSION}-x86_64.AppImage"
+
+      - name: Test extracted AppImage outside the checkout
+        run: |
+          ./HorizonDrive-*.AppImage --appimage-extract
+          APP_RUN="$PWD/squashfs-root/AppRun"
+          cd /tmp
+          xvfb-run -a "$APP_RUN" --smoke-test
 
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
           path: HorizonDrive-*.AppImage
+          if-no-files-found: error
 
   build-flatpak:
-    runs-on: ubuntu-latest
+    needs: validate
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak-builder
+          sudo apt-get install -y flatpak-builder xvfb
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Build bundle
         run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           flatpak-builder --user --install-deps-from=flathub --force-clean --repo=flatpak-repo \
             flatpak-build packaging/flatpak/io.github.derycktheaiguy.HorizonDrive.json
           flatpak build-bundle flatpak-repo \
-            Horizon-Drive-${GITHUB_REF_NAME#v}-x86_64.flatpak \
+            Horizon-Drive-${VERSION}-x86_64.flatpak \
             io.github.derycktheaiguy.HorizonDrive
+
+      - name: Test Flatpak desktop startup
+        run: |
+          flatpak --user install --assumeyes --noninteractive ./Horizon-Drive-*.flatpak
+          xvfb-run -a flatpak run --socket=x11 io.github.derycktheaiguy.HorizonDrive --smoke-test
 
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak
           path: "*.flatpak"
+          if-no-files-found: error
 
   release:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    permissions:
+      contents: write
     needs: [build-wheel, build-appimage, build-flatpak]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:

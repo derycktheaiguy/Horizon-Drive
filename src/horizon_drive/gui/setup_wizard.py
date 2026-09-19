@@ -4,22 +4,23 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from horizon_drive.config import save_config
+from horizon_drive.config import save_config, validate_config
 
 logger = logging.getLogger(__name__)
 
 
 class SetupWizard(ctk.CTkToplevel):
-    def __init__(self, master, on_complete):
+    def __init__(self, master, on_complete, config=None):
         super().__init__(master)
         self.on_complete = on_complete
 
         self.title("Horizon Drive - Initial Setup")
-        self.geometry("600x500")
+        self.geometry("640x620")
         self.attributes("-topmost", True)
+        self.protocol("WM_DELETE_WINDOW", self.master.destroy)
 
         # Default configuration
-        self.config = {"local_folder": os.path.expanduser("~/HorizonDrive"), "sync_mode": "Two-way"}
+        self.config = config or {"local_folder": os.path.expanduser("~/HorizonDrive"), "sync_mode": "Two-way"}
 
         self._build_ui()
 
@@ -78,6 +79,8 @@ class SetupWizard(ctk.CTkToplevel):
             self.main_frame, text="Start Syncing", command=self._finish, height=45, font=ctk.CTkFont(weight="bold")
         )
         self.finish_button.pack(pady=(40, 20))
+        self.status_label = ctk.CTkLabel(self.main_frame, text="", wraplength=480)
+        self.status_label.pack(pady=5)
 
     def _browse_folder(self):
         folder = filedialog.askdirectory(initialdir=os.path.expanduser("~"))
@@ -91,12 +94,15 @@ class SetupWizard(ctk.CTkToplevel):
 
         # Save config to ~/.config/horizon-drive/
         try:
+            self.config = validate_config(self.config)
+            os.makedirs(self.config["local_folder"], exist_ok=True)
             save_config(self.config)
 
             self.destroy()
             self.on_complete(self.config)
         except Exception as e:
             logger.error(f"Error saving config: {e}")
+            self.status_label.configure(text=f"Could not save setup. {e}", text_color="#FF7777")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import threading
 
 import keyring
 from google.auth.transport.requests import Request
@@ -14,12 +16,17 @@ class AuthManager:
     SCOPES = ["https://www.googleapis.com/auth/drive"]
 
     def __init__(self):
+        self._credential_lock = threading.RLock()
         self.client_id = keyring.get_password(self.SERVICE_NAME, "client_id")
         self.client_secret = keyring.get_password(self.SERVICE_NAME, "client_secret")
         self.credentials = self._load_credentials()
 
     def set_client_secrets(self, client_id, client_secret):
         """Sets the client ID and secret in the keyring."""
+        if (client_id, client_secret) != (self.client_id, self.client_secret):
+            # A refresh token belongs to the old client and must not be reused.
+            keyring.set_password(self.SERVICE_NAME, "refresh_token", "")
+            self.credentials = None
         keyring.set_password(self.SERVICE_NAME, "client_id", client_id)
         keyring.set_password(self.SERVICE_NAME, "client_secret", client_secret)
         self.client_id = client_id
@@ -54,7 +61,10 @@ class AuthManager:
         }
 
         flow = InstalledAppFlow.from_client_config(client_config, self.SCOPES)
-        self.credentials = flow.run_local_server(port=0)
+        credentials = flow.run_local_server(port=0, timeout_seconds=180, prompt="consent", access_type="offline")
+        if not credentials or not credentials.refresh_token:
+            raise RuntimeError("Google did not grant offline access. Please reconnect and allow access.")
+        self.credentials = credentials
 
         # Save the refresh token to the keyring
         if self.credentials and self.credentials.refresh_token:
@@ -64,17 +74,27 @@ class AuthManager:
 
     def get_service(self):
         """Returns a Google Drive API service instance."""
-        if not self.credentials or not self.credentials.valid:
-            if self.credentials and self.credentials.expired and self.credentials.refresh_token:
-                self.credentials.refresh(Request())
-            else:
-                self.authenticate()
+        with self._credential_lock:
+            if not self.credentials:
+                raise RuntimeError("Please connect your Google account in setup.")
+            if not self.credentials.valid:
+                if self.credentials.refresh_token:
+                    self.credentials.refresh(Request())
+                else:
+                    raise RuntimeError("Your Google session has expired. Please reconnect your account.")
 
+        # Each caller owns a separate HTTP transport. httplib2 is not thread safe.
         return build("drive", "v3", credentials=self.credentials)
 
     def is_authenticated(self):
         """Checks if the user is currently authenticated."""
-        return self.credentials is not None and self.credentials.valid
+        return self.credentials is not None and bool(self.credentials.valid or self.credentials.refresh_token)
+
+    @property
+    def sync_identity(self):
+        """Namespace sync metadata without persisting account credentials."""
+        token = self.credentials.refresh_token if self.credentials else ""
+        return hashlib.sha256(f"{self.client_id}:{token}".encode()).hexdigest()
 
     def get_quota(self):
         """Fetches Google Drive storage quota.
