@@ -60,3 +60,8 @@ def fake_keyring(monkeypatch):
     backend = FakeKeyring()
     monkeypatch.setattr("horizon_drive.auth.keyring", backend)
     return backend
+
+
+@pytest.fixture(autouse=True)
+def isolated_sync_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

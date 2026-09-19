@@ -73,48 +73,82 @@ def _create_tray_icons():
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Horizon Drive desktop client")
+    parser.add_argument("--smoke-test", action="store_true", help="Check desktop startup without account access")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-    auth_manager = AuthManager()
+    if args.smoke_test:
+        root = ctk.CTk()
+        root.withdraw()
+        ctk.CTkLabel(root, text="Horizon Drive startup check").pack()
+        root.update()
+        root.destroy()
+        print("Desktop startup OK")
+        return
+    try:
+        auth_manager = AuthManager()
+    except Exception:
+        _startup_error(
+            "Unlock or install your system keyring, then reopen Horizon Drive. Credentials require secure storage."
+        )
+        return
     config = load_config()
+    if not auth_manager.is_authenticated() or not config:
+        config = run_setup(auth_manager, config)
+    if config:
+        try:
+            show_main_app(auth_manager, config)
+        except Exception as exc:
+            logging.getLogger(__name__).error("Startup failed: %s", exc)
+            _startup_error(
+                "Could not start sync. Check that your sync folder is writable and sync history is readable."
+            )
 
-    if not auth_manager.is_authenticated():
-        # Wizard flow: Auth -> Setup -> Main
-        temp_root = ctk.CTk()
-        temp_root.title("Horizon Drive - Setup")
-        temp_root.withdraw()
 
-        def on_auth_success():
-            if not config:
-                show_setup_wizard(auth_manager, temp_root)
-            else:
-                temp_root.destroy()
-                show_main_app(auth_manager, config)
+def _startup_error(message):
+    root = ctk.CTk()
+    root.title("Horizon Drive needs attention")
+    root.geometry("540x200")
+    ctk.CTkLabel(root, text=message, wraplength=480).pack(padx=25, pady=30)
+    ctk.CTkButton(root, text="Close", command=root.destroy).pack(pady=10)
+    root.mainloop()
 
-        WelcomeWizard(temp_root, auth_manager, on_success=on_auth_success)
-        temp_root.mainloop()
-    elif not config:
-        # Already authed, but no config
-        show_setup_wizard(auth_manager)
+
+def run_setup(auth_manager, config=None):
+    """One temporary root and one event loop for both setup steps."""
+    root = ctk.CTk()
+    root.withdraw()
+    result = []
+
+    def finish(value):
+        result.append(value)
+        root.destroy()
+
+    def after_auth():
+        if config:
+            finish(config)
+        else:
+            SetupWizard(root, on_complete=finish)
+
+    if auth_manager.is_authenticated():
+        after_auth()
     else:
-        show_main_app(auth_manager, config)
+        WelcomeWizard(root, auth_manager, on_success=after_auth)
+    root.mainloop()
+    return result[0] if result else None
 
 
 def show_setup_wizard(auth_manager, parent_root=None):
-    if not parent_root:
-        parent_root = ctk.CTk()
-        parent_root.withdraw()
-
-    def on_setup_complete(config):
-        parent_root.destroy()
+    config = run_setup(auth_manager)
+    if config:
         show_main_app(auth_manager, config)
-
-    SetupWizard(parent_root, on_complete=on_setup_complete)
-    parent_root.mainloop()
 
 
 def show_main_app(auth_manager, config):
     sync_dir = config.get("local_folder", "~/HorizonDrive")
-    app = MainWindow(auth_manager, sync_dir=sync_dir)
+    app = MainWindow(auth_manager, sync_dir=sync_dir, sync_mode=config.get("sync_mode", "Two-way"))
 
     # Generate tray icons (used if a system tray is available)
     icons = _create_tray_icons()
@@ -124,23 +158,27 @@ def show_main_app(auth_manager, config):
     if pystray is not None:
         # Tray menu callbacks (must marshal into CTk thread via after())
         def restore_window(icon, item):
-            app.after(0, app.restore_window)
+            app.post_ui(app.restore_window)
 
         def toggle_sync(icon, item):
-            app.after(0, app.toggle_sync)
+            app.post_ui(app.toggle_sync)
 
         def force_quit(icon, item):
-            app.after(0, app.force_quit)
+            app.post_ui(app.force_quit)
 
         menu = pystray.Menu(
             pystray.MenuItem("Open", restore_window, default=True),
-            pystray.MenuItem("Pause Sync", toggle_sync),
+            pystray.MenuItem(lambda item: "Resume Sync" if app.sync_paused else "Pause Sync", toggle_sync),
             pystray.MenuItem("Quit", force_quit),
         )
 
         tray_icon = pystray.Icon("horizon_drive", icons["uptodate"], "Horizon Drive", menu)
-        app.tray_icon = tray_icon
-        tray_icon.run_detached()
+        try:
+            tray_icon.run_detached()
+            app.tray_icon = tray_icon
+        except Exception as exc:
+            logging.getLogger(__name__).warning("System tray unavailable: %s", exc)
+            app.tray_icon = None
 
     app.mainloop()
 

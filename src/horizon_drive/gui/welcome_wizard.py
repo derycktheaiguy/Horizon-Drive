@@ -1,4 +1,6 @@
 import logging
+import queue
+import threading
 import webbrowser
 
 import customtkinter as ctk
@@ -17,6 +19,8 @@ class WelcomeWizard(ctk.CTkToplevel):
         self.title("Welcome to Horizon Drive")
         self.geometry("600x500")
         self.attributes("-topmost", True)
+        self.protocol("WM_DELETE_WINDOW", self.master.destroy)
+        self._auth_results = queue.SimpleQueue()
 
         self._build_ui()
 
@@ -86,15 +90,34 @@ class WelcomeWizard(ctk.CTkToplevel):
             return
 
         self.status_label.configure(text="Authenticating in browser...", text_color="blue")
-        self.update()
+        self.auth_button.configure(state="disabled")
 
+        def authenticate():
+            try:
+                self.auth_manager.set_client_secrets(client_id, client_secret)
+                self.auth_manager.authenticate()
+                self._auth_results.put(True)
+            except Exception:
+                self._auth_results.put(False)
+
+        threading.Thread(target=authenticate, daemon=True).start()
+        self.after(100, self._check_auth)
+
+    def _check_auth(self):
         try:
-            self.auth_manager.set_client_secrets(client_id, client_secret)
-            self.auth_manager.authenticate()
-            self.status_label.configure(text="Authentication successful!", text_color="green")
-            self.after(1000, self._on_complete)
-        except Exception as e:
-            self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
+            success = self._auth_results.get_nowait()
+        except queue.Empty:
+            self.after(100, self._check_auth)
+            return
+        self.auth_button.configure(state="normal")
+        if success:
+            self._on_complete()
+        else:
+            self.status_label.configure(
+                text="Could not connect. Check your keys, test-user access, and unlocked system keyring.",
+                text_color="#FF7777",
+                wraplength=470,
+            )
 
     def _on_complete(self):
         self.destroy()

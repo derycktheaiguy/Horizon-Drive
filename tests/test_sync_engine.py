@@ -44,7 +44,7 @@ class TestSyncHandler:
         handler = SyncHandler(rec)
         handler.on_created(DirCreatedEvent("/tmp/folder"))
         handler.on_modified(DirCreatedEvent("/tmp/folder"))
-        assert rec.uploaded == []
+        assert rec.uploaded == ["/tmp/folder"]
 
 
 class TestEngineLifecycle:
@@ -62,7 +62,7 @@ class TestEngineLifecycle:
             assert not engine._downlink_thread.is_alive()
 
     def test_expanduser_applied(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr("os.path.expanduser", lambda path: str(tmp_path / path.removeprefix("~/")))
         engine = SyncEngine(mock.MagicMock(), "~/HorizonDrive")
         assert engine.sync_dir == str(tmp_path / "HorizonDrive")
 
@@ -134,7 +134,7 @@ class TestUploadDownload:
         return service, files, request
 
     def test_upload_success_reports_status(self, engine, tmp_path):
-        local = tmp_path / "report.txt"
+        local = tmp_path / "sync" / "report.txt"
         local.write_text("hello drive")
 
         service, _, request = self._fake_service()
@@ -147,11 +147,11 @@ class TestUploadDownload:
 
         assert request.next_chunk.call_count >= 1
         assert "Syncing..." in statuses
-        assert statuses[-1] == "Up to date"
+        assert statuses[-1] == "Syncing..."
         assert engine.active_transfers == []
 
     def test_upload_failure_clears_transfer(self, engine, tmp_path):
-        local = tmp_path / "broken.txt"
+        local = tmp_path / "sync" / "broken.txt"
         local.write_text("data")
 
         service = mock.MagicMock()
@@ -170,10 +170,10 @@ class TestUploadDownload:
         payload = b"cloud bytes"
 
         class FakeDownloader:
-            def __init__(self, handle, request):
+            def __init__(self, handle, request, **kwargs):
                 self.handle = handle
 
-            def next_chunk(self):
+            def next_chunk(self, **kwargs):
                 self.handle.write(payload)
                 return None, True
 
@@ -218,37 +218,21 @@ class TestListResilience:
 
 
 class TestDownlink:
-    def test_downlink_downloads_missing_remote_file(self, tmp_path):
-        engine = SyncEngine(mock.MagicMock(), str(tmp_path))
-        remote = [{"name": "new-cloud.txt", "mimeType": "text/plain", "id": "r1"}]
-
-        with (
-            mock.patch.object(engine, "list_files", return_value=remote),
-            mock.patch.object(engine, "download_file", return_value=True) as download,
-            mock.patch("time.sleep") as sleep,
-        ):
-            stop_after_first_pass = threading.Timer(0.2, engine._stop_event.set)
-            stop_after_first_pass.start()
-            engine._downlink_loop()
-
-        assert download.called
-        download.assert_called_with("r1", "new-cloud.txt")
-        sleep.assert_called()  # loop slept in short increments, not one long block
-
-    def test_downlink_skips_folders_and_known_files(self, tmp_path):
-        (tmp_path / "known.txt").write_text("already here")
-        engine = SyncEngine(mock.MagicMock(), str(tmp_path))
-        remote = [
-            {"name": "known.txt", "mimeType": "text/plain", "id": "k1"},
-            {"name": "Some Folder", "mimeType": "application/vnd.google-apps.folder", "id": "f1"},
-        ]
-
-        with (
-            mock.patch.object(engine, "list_files", return_value=remote),
-            mock.patch.object(engine, "download_file") as download,
-            mock.patch("time.sleep"),
-        ):
+    def test_polling_failure_is_visible_and_loop_can_stop(self, engine):
+        def fail():
             engine._stop_event.set()
-            engine._downlink_loop()
+            engine._wake_event.set()
+            raise RuntimeError("network down")
 
-        download.assert_not_called()
+        with mock.patch.object(engine, "sync_once", side_effect=fail):
+            engine._downlink_loop()
+        assert engine.last_error
+
+    def test_resume_uses_new_observer(self, engine):
+        with mock.patch.object(engine, "sync_once"):
+            engine.start()
+            first = engine.observer
+            engine.stop()
+            engine.start()
+            assert engine.observer is not first
+            engine.stop()

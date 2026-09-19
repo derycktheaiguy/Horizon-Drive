@@ -81,9 +81,10 @@ class TestAuthenticate:
             "horizon_drive.auth.InstalledAppFlow.from_client_config",
             return_value=flow,
         ):
-            manager.authenticate()
+            with pytest.raises(RuntimeError, match="offline access"):
+                manager.authenticate()
 
-        assert fake_keyring.get_password(AuthManager.SERVICE_NAME, "refresh_token") is None
+        assert not fake_keyring.get_password(AuthManager.SERVICE_NAME, "refresh_token")
 
 
 class TestQuota:
@@ -119,3 +120,33 @@ class TestQuota:
         service = self._service_mock(raises=True)
         with mock.patch.object(manager, "get_service", return_value=service):
             assert manager.get_quota() is None
+
+
+def test_restored_token_is_authenticated_without_browser(fake_keyring):
+    for name, value in (("client_id", "id"), ("client_secret", "secret"), ("refresh_token", "refresh")):
+        fake_keyring.set_password(AuthManager.SERVICE_NAME, name, value)
+    manager = AuthManager()
+    assert manager.credentials.token is None
+    assert manager.is_authenticated()
+    with mock.patch.object(manager.credentials, "refresh") as refresh, mock.patch("horizon_drive.auth.build"):
+        with mock.patch.object(manager, "authenticate") as browser:
+            manager.get_service()
+        refresh.assert_called_once()
+        browser.assert_not_called()
+
+
+def test_changing_client_invalidates_old_refresh_token(fake_keyring):
+    manager = AuthManager()
+    manager.set_client_secrets("first", "secret")
+    fake_keyring.set_password(AuthManager.SERVICE_NAME, "refresh_token", "old-token")
+    manager.credentials = Credentials(token="access", refresh_token="old-token")
+    manager.set_client_secrets("different", "secret")
+    assert not fake_keyring.get_password(AuthManager.SERVICE_NAME, "refresh_token")
+    assert manager.credentials is None
+
+
+def test_background_service_never_opens_browser(fake_keyring):
+    manager = AuthManager()
+    with mock.patch.object(manager, "authenticate") as browser, pytest.raises(RuntimeError, match="connect"):
+        manager.get_service()
+    browser.assert_not_called()
